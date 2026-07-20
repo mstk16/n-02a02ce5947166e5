@@ -85,6 +85,11 @@
  #readreset{background:transparent;border:1px solid #333639;color:#71767b;border-radius:20px;
             padding:8px 10px;font-size:12px;cursor:pointer;font-family:inherit;white-space:nowrap}
  #readreset:hover{color:#e7e9ea;border-color:#71767b}
+ .autoread{display:inline-flex;align-items:center;gap:5px;color:#71767b;font-size:13px;
+           border:1px solid #333639;border-radius:20px;padding:7px 12px;cursor:pointer;
+           user-select:none;white-space:nowrap}
+ .autoread input{accent-color:#1d9bf0;width:15px;height:15px;margin:0;cursor:pointer}
+ .autoread.on{color:#1d9bf0;border-color:#1d9bf0}
  #markhere{position:fixed;right:14px;bottom:16px;z-index:20;background:#1d9bf0;border:0;
            color:#fff;font-weight:700;border-radius:24px;padding:12px 16px;font-size:14px;
            cursor:pointer;font-family:inherit;box-shadow:0 4px 14px rgba(0,0,0,.55)}
@@ -131,6 +136,7 @@
 <select id="sort"><option value="new">新しい順</option><option value="old">古い順</option><option value="likes">いいね順</option><option value="rt">リポスト順</option><option value="views">表示数順</option></select>
 <select id="readfilter"><option value="all">すべて表示</option><option value="unread">未読のみ</option><option value="read">既読のみ</option></select>
 <button id="resume" type="button">前回の続きへ</button>
+<label class="autoread" title="読んだ位置に少し留まると自動で既読にする"><input type="checkbox" id="autoread" checked>自動既読</label>
 <span class="viewtoggle"><button id="tabTL" class="on" type="button">タイムライン</button><button id="tabVID" type="button">動画別</button></span>
 <button id="readreset" type="button">既読をリセット</button>
 </div>
@@ -5551,6 +5557,8 @@
  sortSel.addEventListener('change',function(){
    try{ localStorage.setItem(SORTKEY,sortSel.value); }catch(e){}
    // 並び順が変わったら、その順の既読を読み直してカード表示を作り直す。
+   // 計測中の滞在タイマーは捨てる（前の並び順で見ていたカードを誤って既読にしないため）。
+   if(typeof clearDwell==='function'){ clearDwell(); }
    loadRead(); cards.forEach(syncCard); updateProgress(); apply();
  });
  readFilter.addEventListener('change',function(){
@@ -5625,6 +5633,108 @@
    toast(n+'件を既読にしました');
    if(readFilter.value!=='all'){ apply(); }
  });
+ // === 滞在時間ベースの自動既読 ===
+ // 「画面に写った」ではなく「読む位置(画面中央帯)に一定時間留まった」を条件にする。
+ // スマホは1画面に複数カードが見えるため、写っただけを既読にすると
+ // 下端にチラ見えしただけのカードまで既読になり、読み飛ばしが起きる。
+ // 高速スクロールの流し見も、滞在時間の条件で自然に除外される。
+ var AUTOREAD_MS=2500;
+ var autoChk=document.getElementById('autoread');
+ var AUTOKEY='roki_autoread_v1';
+ try{
+   var av=localStorage.getItem(AUTOKEY);
+   if(av!==null){ autoChk.checked=(av==='1'); }
+ }catch(e){}
+ function syncAutoUI(){ autoChk.parentNode.classList.toggle('on',autoChk.checked); }
+ autoChk.addEventListener('change',function(){
+   try{ localStorage.setItem(AUTOKEY,autoChk.checked?'1':'0'); }catch(e){}
+   syncAutoUI();
+   if(!autoChk.checked){ clearDwell(); }
+ });
+ syncAutoUI();
+
+ // 判定は IntersectionObserver ではなく定期チェックで行う。
+ // 理由: IOは「交差した瞬間」しか通知しないため、スクロールを止めて読んでいる間に
+ // 追加のイベントが来ず、滞在時間の計測が環境によって不安定になる。
+ // 一定間隔で「いま中央帯にいるカード」を見る方式なら挙動が環境に依存せず、検証もできる。
+ // 「いま読んでいる1枚」だけを追う。curCard が変わる/画面が動いた時点で蓄積は捨てる。
+ var curCard=null, curMs=0, lastTick=null, lastY=null;
+ var STILL_PX=40;       // このtickで40px以上動いていたら「読んでいない（移動中）」とみなす
+ // ページを開いた直後は、先頭カードがたまたま中央帯にいるだけで既読になってしまう。
+ // 一度でも画面が動くまでは自動既読を開始しない。
+ // scroll イベントではなく tick 内でのスクロール位置の変化で判定する
+ // （scroll イベントを発火させない環境があり、それだと機能が永久に起動しないため）。
+ var userScrolled=false, initialY=null;
+ function clearDwell(){ curCard=null; curMs=0; lastTick=null; lastY=null; }
+ function markAuto(c){
+   if(readSet.has(c.dataset.id)) return;
+   readSet.add(c.dataset.id);
+   saveRead(); syncCard(c); updateProgress();
+   // 「未読のみ」表示中に即座に消すと読んでいる最中のカードが飛ぶため、
+   // 自動既読では再描画しない（薄くなるだけ・次に絞り込んだ時に反映される）。
+ }
+ // 画面の中央帯（上下25%を除いた中央50%）に写っているカードを返す。
+ // 打ち切り条件は「カードの上端が帯より下」で判定する。r.bottom で打ち切ると、
+ // 帯より背の高いカード（帯を覆っている＝まさに読んでいるカード）が
+ // 判定される前に切られてしまう。
+ function cardsInBand(){
+   var top=window.innerHeight*0.25, bottom=window.innerHeight*0.75, res=[];
+   var kids=feed.children;
+   for(var i=0;i<kids.length;i++){
+     var c=kids[i];
+     if(c.style.display==='none') continue;
+     var r=c.getBoundingClientRect();
+     if(r.top>bottom) break;          // 以降は帯より下（DOM順＝表示順）
+     if(r.bottom>top && r.top<bottom){ res.push(c); }
+   }
+   return res;
+ }
+ var TICK_MS=250;
+ function tickDwell(){
+   if(!autoChk.checked){ clearDwell(); return; }
+   var now=Date.now(), y=window.pageYOffset||window.scrollY||0;
+   // 初回位置から一度も動いていない間は、自動既読を開始しない
+   if(!userScrolled){
+     if(initialY===null){ initialY=y; }
+     if(Math.abs(y-initialY)<=STILL_PX){ clearDwell(); return; }
+     userScrolled=true;
+   }
+   // 加算は実経過時間で行う（tick間隔を上限にすると、タイマーが間引かれる環境で
+   // 蓄積が実時間に追いつかず、いつまでも既読にならない）。
+   // 流し見の誤既読は、この下の「静止していること」のゲートで防ぐ。
+   // 上限は裏に回っていた時間を一気に積まないための保険。
+   var delta = lastTick===null ? 0 : Math.min(now-lastTick, 1200);
+   // 画面が動いていたら「読んでいない」。スクロール中は絶対に蓄積しない。
+   // 時間だけを条件にすると、タイマーが間引かれる環境や裏に回した状態で
+   // 見ていないカードが既読になるため、静止を必須のゲートにする。
+   var moved = (lastY===null) || Math.abs(y-lastY) > STILL_PX;
+   lastTick=now; lastY=y;
+
+   // 帯にいるカードのうち、画面中央に最も近い1枚だけを「読んでいるカード」とみなす。
+   var inBand=cardsInBand();
+   var mid=window.innerHeight/2, cur=null, best=Infinity;
+   inBand.forEach(function(c){
+     var r=c.getBoundingClientRect();
+     var d=Math.abs((r.top+r.bottom)/2 - mid);
+     if(d<best){ best=d; cur=c; }
+   });
+   // 動いた or 読んでいる対象が変わったら、蓄積をゼロから数え直す
+   if(moved || cur!==curCard){ curCard=cur; curMs=0; return; }
+   if(cur && !readSet.has(cur.dataset.id)){
+     curMs+=delta;
+     if(curMs>=AUTOREAD_MS){ curMs=0; markAuto(cur); }
+   }
+ }
+ setInterval(tickDwell,TICK_MS);
+ // 画面を離れた/裏に回した時は蓄積を捨てる。放置している間に加算され、
+ // 見ていないカードが既読になるのを防ぐ（document.hidden の常時参照はしない。
+ // 環境によっては表示中でも hidden と報告されるため、イベント契機で判定する）。
+ document.addEventListener('visibilitychange',function(){
+   if(document.hidden){ clearDwell(); }
+ });
+ window.addEventListener('pagehide',clearDwell);
+ window.addEventListener('blur',clearDwell);
+
  var toastEl=document.getElementById('toast'), toastTimer=null;
  function toast(msg){
    toastEl.textContent=msg; toastEl.classList.add('show');
