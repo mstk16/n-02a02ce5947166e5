@@ -3,6 +3,14 @@
 <meta name="robots" content="noindex,nofollow,noarchive,noimageindex">
 <meta name="googlebot" content="noindex,nofollow">
 <meta name="referrer" content="no-referrer">
+<link rel="manifest" href="./manifest.webmanifest">
+<meta name="theme-color" content="#000000">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="ろきじめ エゴサ">
+<link rel="apple-touch-icon" href="./icon-192.png">
+<link rel="icon" href="./icon-192.png">
 <title>ろきじめ エゴサ結果</title>
 <style>
  :root{color-scheme:dark}
@@ -5680,6 +5688,13 @@
  cards.forEach(syncCard);
  updateProgress();
  apply();
+ // スマホアプリ（PWA）としてホーム画面から起動＆圏外でも閲覧できるようにする。
+ // file:// で直接開いた場合やSW非対応環境では何もしない（エラーを出さない）。
+ if('serviceWorker' in navigator && location.protocol.indexOf('http')===0){
+   window.addEventListener('load',function(){
+     navigator.serviceWorker.register('./sw.js').catch(function(){});
+   });
+ }
 })();
 </script>
 </body></html>
