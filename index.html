@@ -34,8 +34,8 @@
  .card.read .readchk{color:#1d9bf0}
  .newbadge{display:none;background:#00ba7c;color:#fff;font-size:11px;font-weight:700;
            border-radius:6px;padding:1px 6px;margin-right:2px;letter-spacing:.03em}
- .card[data-new="1"] .newbadge{display:inline-block}
- .card[data-new="1"]{background:linear-gradient(90deg,rgba(0,186,124,.10),transparent 60%)}
+ .card.isnew .newbadge{display:inline-block}
+ .card.isnew{background:linear-gradient(90deg,rgba(0,186,124,.10),transparent 60%)}
  .avatar{width:40px;height:40px;border-radius:50%;flex:0 0 40px;background:#333;
          object-fit:cover}
  .avatar.small{width:28px;height:28px;flex:0 0 28px}
@@ -6074,11 +6074,17 @@
  function syncCard(c){
    var on=readSet.has(c.dataset.id);
    c.classList.toggle('read',on);
+   // NEW表示は「収集が新着と判定した」かつ「まだ読んでいない」ときだけ。
+   // 既読にした時点でバッジを外すので、新着件数＝これから見るべき件数になる。
+   c.classList.toggle('isnew',c.dataset.new==='1' && !on);
    var cb=c.querySelector('.readchk input');
    if(cb){ cb.checked=on; }
  }
  function updateProgress(){
    readCountEl.textContent=readSet.size;
+   var nc=document.getElementById('newcount');
+   if(nc){ nc.textContent=cards.filter(function(c){
+     return c.classList.contains('isnew'); }).length; }
    // 並び順ごとに既読が独立しているため、いま「どのパスの進捗か」を必ず明示する。
    // これが無いと、並び順を変えた瞬間に既読数が変わって記録が消えたように見える。
    var pn=document.getElementById('passname');
@@ -6093,7 +6099,7 @@
      if(term && c.dataset.search.indexOf(term)<0){return false;}
      if(rf==='unread' && readSet.has(c.dataset.id)){return false;}
      if(rf==='read' && !readSet.has(c.dataset.id)){return false;}
-     if(newOnly && c.dataset.new!=='1'){return false;}
+     if(newOnly && !c.classList.contains('isnew')){return false;}
      return true;
    });
    var s=sortSel.value;
