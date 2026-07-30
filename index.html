@@ -157,7 +157,7 @@
 <select id="sort"><option value="new">新しい順</option><option value="old">古い順</option><option value="likes">いいね順</option><option value="rt">リポスト順</option><option value="views">表示数順</option></select>
 <select id="readfilter"><option value="all">すべて表示</option><option value="unread">未読のみ</option><option value="read">既読のみ</option></select>
 <select id="convfilter" title="リプライの有無で絞り込む"><option value="all">会話：すべて</option><option value="hasreply">リプライが付いた 25</option><option value="isreply">これ自体がリプライ 12</option><option value="single">単独ポスト 320</option></select>
-<button id="resume" type="button">前回の続きへ</button>
+<button id="resume" type="button" title="まだ既読が付いていない最初のポストへ移動する">未読の先頭へ</button>
 <button id="newonly" type="button" style="display:none">新着のみ 9</button>
 <label class="autoread" title="読み終えて画面の上へ流れたポストを自動で既読にする"><input type="checkbox" id="autoread" checked>自動既読</label>
 <span class="viewtoggle"><button id="tabTL" class="on" type="button">タイムライン</button><button id="tabVID" type="button">動画別</button></span>
@@ -6096,12 +6096,8 @@
  // 既読状態はこの端末のブラウザに保存する（localStorage）。
  // キーはポストIDなので、収集し直してHTMLを作り直しても既読は維持される。
  var LSKEY='roki_read_v1';
- // 読み位置は「並び順ごと」に分けて保存する。1つの枠を共有すると、別の並び順を
- // 少し眺めただけで元の並び順の読み位置が上書きされ、未読を大量に読み飛ばす。
- var POSPREFIX='roki_pos_v1_';
  var SORTKEY='roki_sort_v1';
  var FILTERKEY='roki_filter_v1';
- function posKey(){ return POSPREFIX+sortSel.value; }
  // 既読も「並び順ごと」に独立させる。並び順ごとに読破パスを別作業として扱うため、
  // ある順で既読にしても他の順の進捗には影響しない。
  function readKey(){ return LSKEY+'_'+sortSel.value; }
@@ -6119,7 +6115,7 @@
    loadSeenAnyPass();   // 既読が動いたら横断セットも作り直す（下のコメント参照）
  }
  // NEWバッジの消し込みだけは「並び順をまたいだ既読の合計」で判定する。
- // 読破の進捗（既読数・グレーアウト・読み位置）は並び順ごとに独立させたい仕様だが、
+ // 読破の進捗（既読数・グレーアウト）は並び順ごとに独立させたい仕様だが、
  // それをNEWにも適用すると、並び順を変えた瞬間に一度読んだポストのNEWが復活して
  // 「消したのに減らない」ことになる。だからここだけ全パスの和集合を使う。
  var seenAnyPass=new Set();
@@ -6236,44 +6232,35 @@
    el.style.outline='2px solid #1d9bf0'; el.style.outlineOffset='-2px';
    setTimeout(function(){ el.style.outline=''; },1800);
  }
- // 読み位置の自動記憶：画面最上部に見えているポストのIDを保存する。
- // チェック操作をしなくても「前回の続き」に戻れるようにするための仕組み。
- function savePos(){
-   var kids=feed.children;
+ // 「未読の先頭へ」：まだ既読が付いていない最初のポストへ飛ぶ。
+ // 以前は「最後に画面へ映った位置」を保存して戻る方式だったが、スクロールのたびに
+ // 400msごと上書きされるため、記録されるのは数秒前に眺めた場所でしかなく、押しても
+ // ほぼ同じ所へ戻るだけだった。「読んだ証拠（既読）」を基準にすれば、どこまで進んだ
+ // かが実際に反映される。自動既読がONなら上へ流れ去った分が既読になるので、
+ // 「前回読み終えた続き」に自然と一致する。
+ // 判定には全並び順の既読の合計(seenAnyPass)を使う。今の並び順の記録だけで見ると、
+ // 並び順を切り替えた瞬間に全件が未読扱いになり、また常に一番上へ飛ぶボタンに戻る。
+ document.getElementById('resume').addEventListener('click',function(){
+   var kids=feed.children, firstUnread=null, firstShown=null;
    for(var i=0;i<kids.length;i++){
      var c=kids[i];
-     if(c.style.display==='none') continue;
-     if(c.getBoundingClientRect().bottom>0){
-       try{ localStorage.setItem(posKey(),c.dataset.id); }catch(e){}
-       return;
-     }
+     if(c.style.display==='none') continue;   // 絞り込みで隠れている分は飛ばす
+     if(firstShown===null){ firstShown=c; }
+     if(!seenAnyPass.has(c.dataset.id)){ firstUnread=c; break; }
    }
- }
- var posTimer=null;
- window.addEventListener('scroll',function(){
-   if(posTimer) return;
-   posTimer=setTimeout(function(){ posTimer=null; savePos(); },400);
- });
- // スマホはアプリ切替やタブを閉じる形で離脱するので、そのタイミングでも確実に保存する。
- window.addEventListener('pagehide',savePos);
- document.addEventListener('visibilitychange',function(){
-   if(document.visibilityState==='hidden'){ savePos(); }
- });
- document.getElementById('resume').addEventListener('click',function(){
-   var id=null;
-   try{ id=localStorage.getItem(posKey()); }catch(e){}
-   if(!id){ toast('この並び順ではまだ読み位置がありません。スクロールすると自動で記録されます。'); return; }
-   var target=null, kids=feed.children;
-   for(var i=0;i<kids.length;i++){
-     if(kids[i].dataset.id===id){ target=kids[i]; break; }
+   if(firstShown===null){
+     toast('表示されているポストがありません。絞り込みを緩めてください。'); return;
    }
-   if(!target || target.style.display==='none'){
-     toast('前回の位置は今の表示条件では見えません。「すべて表示」に戻してください。');
+   if(!firstUnread){ toast('この条件では未読がありません。'); return; }
+   showTL();
+   if(firstUnread===firstShown){
+     // すでに先頭が未読。黙って何も起きないと壊れたように見えるので位置を示す。
+     flash(firstUnread);
+     toast('ここが未読の先頭です。');
      return;
    }
-   showTL();
-   target.scrollIntoView({behavior:'smooth',block:'start'});
-   flash(target);
+   firstUnread.scrollIntoView({behavior:'smooth',block:'start'});
+   flash(firstUnread);
  });
  // 「ここまで既読にする」：画面より上（＝読み終えた分）をまとめて既読にする。
  document.getElementById('markhere').addEventListener('click',function(){
@@ -6394,6 +6381,14 @@
    if(fv && readFilter.querySelector('option[value="'+fv+'"]')){ readFilter.value=fv; }
    var cv=localStorage.getItem(CONVKEY);
    if(convFilter && cv && convFilter.querySelector('option[value="'+cv+'"]')){ convFilter.value=cv; }
+ }catch(e){}
+ // 廃止した「読み位置」(roki_pos_v1_*)の保存が端末に残っているので掃除する。
+ // もう誰も読まないゴミなので、見つけ次第消すだけでよい。
+ try{
+   for(var pi=localStorage.length-1;pi>=0;pi--){
+     var pk=localStorage.key(pi);
+     if(pk && pk.indexOf('roki_pos_v1_')===0){ localStorage.removeItem(pk); }
+   }
  }catch(e){}
  loadRead();
  loadSeenAnyPass();
