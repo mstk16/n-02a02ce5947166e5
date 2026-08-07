@@ -6668,9 +6668,9 @@
  document.getElementById('readreset').addEventListener('click',function(){
    var name=sortSel.options[sortSel.selectedIndex].text;
    // 消すのは「今の並び順のパス」だけ。他の並び順の進捗は巻き込まない。
-   // _SCRIPT は raw 文字列ではないので、JSに渡す改行は \n と書く（
- だとPythonが
-   // 本物の改行に変換し、JS文字列リテラルが改行を跨いで構文エラーになる）。
+   // 確認文の改行はバックスラッシュを二重にして書くこと。_SCRIPT は raw 文字列では
+   // ないので、一重で書くとPythonが本物の改行に変えてしまい、その行以降がコメントから
+   // はみ出して生のコードになる（実際にここで踏んで、リセットが無反応になっていた）。
    if(!confirm('「'+name+'」のパスの既読記録を消して、全件を未読に戻します。\n他の並び順の進捗はそのまま残ります。よろしいですか？')) return;
    readSet.clear(); saveRead();
    cards.forEach(syncCard); updateProgress(); apply();
