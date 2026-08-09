@@ -51,6 +51,10 @@
     #app{max-width:none; margin:0;}
     /* シアターモードでは動画は左ペインが本体なので、右上の小プレビューは隠す */
     .yt-float{display:none;}
+    /* フローティングキーボードが出る側に応じて、メモとチャット(動画)の左右を
+       入れ替えられるように(⚙設定から切替)。DOM順は変えずgridのorderだけ動かす */
+    #root.swap-panes #videoPane{ order:2; border-right:none; border-left:1px solid var(--border); }
+    #root.swap-panes #app{ order:1; }
   }
 
   #app{
@@ -269,6 +273,13 @@
   .yt-search-item-title{font-size:13px; font-weight:600; word-break:break-word; line-height:1.4;}
   .yt-search-item-channel{font-size:11px; color:var(--sub); margin-top:2px;}
 
+  .switch-row{
+    display:flex; align-items:center; justify-content:space-between; gap:10px;
+    background:var(--panel2); border:1px solid var(--border); border-radius:10px;
+    padding:10px 12px; margin-top:8px; font-size:13.5px; cursor:pointer;
+  }
+  .switch-row input{width:auto; accent-color:var(--accent);}
+
   .tag-set-list{display:flex; flex-direction:column; gap:6px; margin-top:8px;}
   .tag-set-row{
     display:flex; align-items:center; justify-content:space-between; gap:8px;
@@ -377,6 +388,13 @@
     <div class="sheet-title">設定</div>
     <div class="settings-elapsed" id="timerDisplay">00:00</div>
 
+    <div class="field-label">画面レイアウト（横長の分割表示のときだけ）</div>
+    <label class="switch-row" for="swapPanesToggle">
+      <span>チャット/動画とメモの左右を入れ替える</span>
+      <input type="checkbox" id="swapPanesToggle">
+    </label>
+    <div class="session-hint" style="margin-top:4px;">フローティングキーボードが出る側にメモが隠れる場合、反対側に逃がすために使う。</div>
+
     <div id="ytLinkSection">
       <div class="field-label">YouTube連携（任意・経過時間を自動取得）</div>
       <div class="add-tag-row">
@@ -443,7 +461,8 @@
       tagSets: [{ id: 'default', name: 'デフォルト', tags: DEFAULT_TAGS.slice() }],
       activeTagSetId: 'default',
       ytApiKey: '',
-      draftText: ''
+      draftText: '',
+      swapPanes: false
     };
   }
   // 旧バージョン(タグがtagPresetsのフラット配列だった頃)からの移行
@@ -1007,6 +1026,7 @@
   function openSessionSheet(){
     var s = activeSession();
     document.getElementById('endSessionBtn').style.display = s ? '' : 'none';
+    document.getElementById('swapPanesToggle').checked = !!state.swapPanes;
     updateTimerDisplay();
     renderTagSetList();
     renderTagManageList();
@@ -1157,6 +1177,17 @@
   });
   document.getElementById('cancelSessionBtn').addEventListener('click', closeSessionSheet);
   sessionSheet.querySelector('.sheet-backdrop').addEventListener('click', closeSessionSheet);
+
+  // ---------- 分割表示のレイアウト入れ替え(フローティングキーボード対策) ----------
+  function applySwapPanes(){
+    document.getElementById('root').classList.toggle('swap-panes', !!state.swapPanes);
+  }
+  applySwapPanes();
+  document.getElementById('swapPanesToggle').addEventListener('change', function(){
+    state.swapPanes = this.checked;
+    save();
+    applySwapPanes();
+  });
 
   // ---------- メモ入力/編集シート ----------
   var memoSheet = document.getElementById('memoSheet');
