@@ -1112,13 +1112,16 @@
     async function forceUpdate(){
       showToast('最新版を取得しています…');
       try{
-        if('serviceWorker' in navigator){
-          var reg = await navigator.serviceWorker.getRegistration();
-          if(reg) await reg.update();
-        }
         if('caches' in window){
           var keys = await caches.keys();
           await Promise.all(keys.map(function(k){ return caches.delete(k); }));
+        }
+        if('serviceWorker' in navigator){
+          // updateだけだと登録済みのSW自体は残るため、古い版がfetchを
+          // 処理し続けるコトがある。登録解除まで行い、次回読み込みで
+          // 完全にゼロから登録し直させる。
+          var regs = await navigator.serviceWorker.getRegistrations();
+          await Promise.all(regs.map(function(r){ return r.unregister(); }));
         }
       }catch(e){ /* 取得に失敗しても、とりあえずリロードだけは試みる */ }
       location.reload();
