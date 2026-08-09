@@ -163,7 +163,7 @@
     border:1px solid var(--border); background:var(--panel2); color:var(--text);
     border-radius:10px; padding:8px 12px; font-size:13px; cursor:pointer;
   }
-  textarea, input[type=text], input[type=url]{
+  textarea, input[type=text], input[type=url], input[type=time]{
     width:100%; background:var(--panel2); border:1px solid var(--border); color:var(--text);
     border-radius:10px; padding:11px 12px; font-size:15px; font-family:inherit; resize:none;
   }
@@ -256,6 +256,12 @@
     <input type="text" id="sessionTitleInput" placeholder="例：8/9 雑談配信">
     <div class="field-label">配信URL（任意）</div>
     <input type="url" id="sessionUrlInput" placeholder="https://...">
+    <div class="field-label">配信開始時刻（任意）</div>
+    <div class="add-tag-row">
+      <input type="time" id="sessionStartTimeInput">
+      <button class="btn" id="setNowBtn">今</button>
+    </div>
+    <div class="session-hint" style="margin-top:8px;">ここを入れた時刻が経過時間の0:00になります。あとから修正すると、すでに記録したメモの時間も自動でずれを補正します。</div>
     <div class="sheet-buttons">
       <button class="btn ghost" id="cancelSessionBtn">キャンセル</button>
       <button class="btn primary" id="saveSessionBtn">保存</button>
@@ -314,6 +320,21 @@
   function formatDateTime(ms){
     var d = new Date(ms);
     return d.getFullYear()+'/'+pad(d.getMonth()+1)+'/'+pad(d.getDate())+' '+pad(d.getHours())+':'+pad(d.getMinutes());
+  }
+  function formatHM(ms){
+    var d = new Date(ms);
+    return pad(d.getHours())+':'+pad(d.getMinutes());
+  }
+  // "HH:MM" と基準時刻(anchorMs、通常は既存の開始時刻 or 現在時刻)から実際のエポック時刻を求める。
+  // 深夜またぎ対策として、未来側に倒れた場合は前日分とみなす。
+  function parseClockTimeToEpoch(hhmm, anchorMs){
+    var parts = String(hhmm).split(':').map(function(x){ return parseInt(x,10); });
+    if(parts.length<2 || parts.some(isNaN)) return null;
+    var anchor = new Date(anchorMs);
+    var d = new Date(anchor.getFullYear(), anchor.getMonth(), anchor.getDate(), parts[0], parts[1], 0, 0);
+    var ms = d.getTime();
+    if(ms > Date.now() + 5*60*1000) ms -= 24*60*60*1000;
+    return ms;
   }
 
   function currentElapsedSec(session){
@@ -500,6 +521,7 @@
   var sessionSheet = document.getElementById('sessionSheet');
   var sessionTitleInput = document.getElementById('sessionTitleInput');
   var sessionUrlInput = document.getElementById('sessionUrlInput');
+  var sessionStartTimeInput = document.getElementById('sessionStartTimeInput');
   var editingIsNew = false;
 
   function openSessionSheet(isNew){
@@ -507,17 +529,32 @@
     var s = activeSession();
     sessionTitleInput.value = s ? s.title : '';
     sessionUrlInput.value = s ? (s.url||'') : '';
+    sessionStartTimeInput.value = s ? formatHM(s.startedAt) : '';
     sessionSheet.classList.remove('hidden');
     setTimeout(function(){ sessionTitleInput.focus(); }, 50);
   }
   function closeSessionSheet(){ sessionSheet.classList.add('hidden'); }
   document.getElementById('cancelSessionBtn').addEventListener('click', closeSessionSheet);
   sessionSheet.querySelector('.sheet-backdrop').addEventListener('click', closeSessionSheet);
+  document.getElementById('setNowBtn').addEventListener('click', function(){
+    sessionStartTimeInput.value = formatHM(Date.now());
+  });
   document.getElementById('saveSessionBtn').addEventListener('click', function(){
     var s = ensureActiveSession();
     var title = sessionTitleInput.value.trim();
     s.title = title || s.title;
     s.url = sessionUrlInput.value.trim();
+
+    var timeVal = sessionStartTimeInput.value;
+    if(timeVal){
+      var newStartedAt = parseClockTimeToEpoch(timeVal, s.startedAt);
+      if(newStartedAt !== null && newStartedAt !== s.startedAt){
+        var deltaSec = Math.round((s.startedAt - newStartedAt)/1000);
+        s.memos.forEach(function(m){ m.t = Math.max(0, m.t + deltaSec); });
+        s.startedAt = newStartedAt;
+      }
+    }
+
     save();
     closeSessionSheet();
     renderHome();
@@ -716,6 +753,7 @@
       '【使い方】\n' +
       '・「＋ メモを記録」または上部のタグをタップすると、配信が自動で始まりその瞬間の時間が記録されます。\n' +
       '・タグをタップするだけで本文なしのメモを一瞬で残せます。あとでタップして本文を追記できます。\n' +
+      '・「タイトル/URLを編集」から配信開始時刻を指定すると、そこを0:00として経過時間を正確に計算します。あとから直しても過去のメモの時間は自動でずれを補正します。\n' +
       '・「履歴」から過去の配信メモを見返したり、テキストとしてコピーできます。\n' +
       '・データはこの端末内だけに保存されます（他の端末とは同期しません）。'
     );
