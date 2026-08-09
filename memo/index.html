@@ -70,6 +70,7 @@
   }
   .iconbtn:active{background:var(--panel2);}
   .iconbtn.hidden{display:none;}
+  .iconbtn.pressing{background:var(--accent-dim); color:var(--accent);}
   .topbar-icons{display:flex; align-items:center; gap:2px;}
 
   .view{flex:1 1 auto; overflow-y:auto; padding:14px 14px calc(140px + var(--safe-b));}
@@ -880,7 +881,56 @@
     setTimeout(function(){ sessionTitleInput.focus(); }, 50);
   }
   function closeSessionSheet(){ sessionSheet.classList.add('hidden'); }
-  document.getElementById('settingsBtn').addEventListener('click', function(){ openSessionSheet(false); });
+
+  // ⚙設定ボタンの1.5秒長押しで、最新版を強制的に取り直す(イズレ/アシアト同様のパターン)。
+  // このアプリはService Workerがキャッシュ優先＋裏で新版取得なので、放っておくと
+  // 「更新は次回起動時にしか反映されない」。今すぐ最新にしたい場合の脱出口として用意する。
+  (function(){
+    var btn = document.getElementById('settingsBtn');
+    var LONG_PRESS_MS = 1500;
+    var pressTimer = null;
+    var longPressFired = false;
+
+    async function forceUpdate(){
+      showToast('最新版を取得しています…');
+      try{
+        if('serviceWorker' in navigator){
+          var reg = await navigator.serviceWorker.getRegistration();
+          if(reg) await reg.update();
+        }
+        if('caches' in window){
+          var keys = await caches.keys();
+          await Promise.all(keys.map(function(k){ return caches.delete(k); }));
+        }
+      }catch(e){ /* 取得に失敗しても、とりあえずリロードだけは試みる */ }
+      location.reload();
+    }
+
+    function startPress(){
+      longPressFired = false;
+      clearTimeout(pressTimer);
+      btn.classList.add('pressing');
+      pressTimer = setTimeout(function(){
+        longPressFired = true;
+        btn.classList.remove('pressing');
+        if(navigator.vibrate) navigator.vibrate(30);
+        forceUpdate();
+      }, LONG_PRESS_MS);
+    }
+    function cancelPress(){
+      clearTimeout(pressTimer);
+      btn.classList.remove('pressing');
+    }
+    btn.addEventListener('pointerdown', startPress);
+    btn.addEventListener('pointerup', cancelPress);
+    btn.addEventListener('pointerleave', cancelPress);
+    btn.addEventListener('pointercancel', cancelPress);
+    btn.addEventListener('click', function(e){
+      if(longPressFired){ longPressFired = false; e.preventDefault(); return; }
+      openSessionSheet(false);
+    });
+  })();
+
   document.getElementById('endSessionBtn').addEventListener('click', function(){
     if(endActiveSession()) closeSessionSheet();
   });
@@ -1107,6 +1157,7 @@
       '・「YouTube連携」に配信のURLを貼ると、配信の再生位置から経過時間を自動取得します（通信が必要・小さく動画が再生されます）。ズレを感じたら⚙設定の中の±5秒で微調整できます。\n' +
       '・画面が横長・正方形に近いくらい広いとき（分割画面など）は、左に動画とチャット、右にメモという2ペイン表示に自動で切り替わります。動画は音量ミュートで始まるので、必要ならプレーヤー上のボタンでミュート解除してください。\n' +
       '・「履歴」から過去の配信メモを見返したり、テキストとしてコピーできます。\n' +
+      '・画面が古いままだと感じたら、⚙を1.5秒長押しすると強制的に最新版を取得して再読み込みします。\n' +
       '・データはこの端末内だけに保存されます（他の端末とは同期しません）。'
     );
   });
