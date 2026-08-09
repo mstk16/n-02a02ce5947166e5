@@ -578,7 +578,7 @@
       return;
     }
     var src = 'https://www.youtube.com/live_chat?v=' + encodeURIComponent(wantId) +
-      '&embed_domain=' + encodeURIComponent(location.hostname);
+      '&embed_domain=' + encodeURIComponent(location.hostname) + '&dark_theme=1';
     wrap.innerHTML = '<iframe src="'+src+'" allow="autoplay"></iframe>';
   }
 
