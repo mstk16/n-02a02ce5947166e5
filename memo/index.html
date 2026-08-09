@@ -732,7 +732,9 @@
 
     memoListLabel.textContent = 'メモ（' + s.memos.length + '件）';
     renderMemoItems(memoListEl, s.memos, function(memo){ openMemoSheet(memo.id); });
-    memoListEl.scrollTop = memoListEl.scrollHeight;
+    // 実際にスクロールするのはmemoListElの親である.view(homeView)側。
+    // 新しく記録したメモがFABに隠れず見えるよう、一番下までスクロールしておく。
+    views.home.scrollTop = views.home.scrollHeight;
   }
 
   function renderQuickTags(container, onTap){
