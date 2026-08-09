@@ -544,6 +544,29 @@
     save();
   });
 
+  // 分割画面の切り替えなどでタブが裏に回ると埋め込みプレーヤーが一時停止/停止することがあるため、
+  // 表に戻ってきたタイミングで自動的に再生を復帰させる。
+  document.addEventListener('visibilitychange', function(){
+    if(document.visibilityState !== 'visible') return;
+    var s = activeSession();
+    if(!s || !s.ytVideoId) return;
+    if(ytPlayer && ytPlayerSessionId===s.id){
+      try{
+        var state = ytPlayer.getPlayerState();
+        if(state===YT.PlayerState.PAUSED || state===YT.PlayerState.UNSTARTED || state===YT.PlayerState.CUED){
+          ytPlayer.playVideo();
+        }
+        pollYtTime();
+      }catch(e){
+        setYtStatus('再接続中…');
+        loadYouTubeApi(function(){ createYtPlayer(s); }, function(){ unlinkYouTube(s); });
+      }
+    } else {
+      // ページ自体が再読み込みされてプレーヤー未接続の場合はここで繋ぎ直す
+      renderYtPanel(s);
+    }
+  });
+
   // ---------- Toast ----------
   var toastEl = document.getElementById('toast');
   var toastMsg = document.getElementById('toastMsg');
