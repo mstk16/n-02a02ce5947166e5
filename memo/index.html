@@ -1,0 +1,743 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>配信メモ</title>
+<meta name="description" content="配信を見ながら見どころ・気になる場面をワンタップで記録できるメモアプリ">
+<meta name="theme-color" content="#0d0f14">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="配信メモ">
+<link rel="manifest" href="./manifest.webmanifest">
+<link rel="icon" href="./icon-192.png">
+<link rel="apple-touch-icon" href="./icon-192.png">
+<style>
+  :root{
+    --bg:#0d0f14;
+    --panel:#161922;
+    --panel2:#1d212c;
+    --border:#2a2f3c;
+    --text:#f1f3f6;
+    --sub:#9aa3b2;
+    --accent:#1d9bf0;
+    --accent-dim:#144a70;
+    --danger:#f4405a;
+    --safe-b: env(safe-area-inset-bottom, 0px);
+    --safe-t: env(safe-area-inset-top, 0px);
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  html,body{height:100%;}
+  body{
+    margin:0; background:var(--bg); color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Yu Gothic UI",sans-serif;
+    overscroll-behavior-y:none;
+  }
+  #app{
+    max-width:560px; margin:0 auto; height:100dvh;
+    display:flex; flex-direction:column; position:relative;
+  }
+  .topbar{
+    display:flex; align-items:center; justify-content:space-between;
+    padding:calc(10px + var(--safe-t)) 16px 10px;
+    border-bottom:1px solid var(--border); flex:0 0 auto;
+    background:var(--bg); position:sticky; top:0; z-index:5;
+  }
+  .brand{font-weight:700; font-size:17px; letter-spacing:.02em;}
+  .iconbtn{
+    background:none; border:none; color:var(--sub); font-size:20px;
+    padding:6px 8px; border-radius:8px; cursor:pointer;
+  }
+  .iconbtn:active{background:var(--panel2);}
+
+  .view{flex:1 1 auto; overflow-y:auto; padding:14px 14px calc(140px + var(--safe-b));}
+  .view.hidden{display:none;}
+
+  .session-card{
+    background:var(--panel); border:1px solid var(--border); border-radius:16px;
+    padding:16px; margin-bottom:14px;
+  }
+  .session-title{font-size:17px; font-weight:700; word-break:break-word;}
+  .session-url{font-size:12px; color:var(--sub); margin-top:2px; word-break:break-all;}
+  .timer{
+    font-variant-numeric:tabular-nums; font-size:40px; font-weight:800;
+    letter-spacing:.02em; margin:10px 0 4px; color:var(--accent);
+  }
+  .session-hint{color:var(--sub); font-size:13px; line-height:1.6;}
+  .session-actions{display:flex; gap:8px; margin-top:12px; flex-wrap:wrap;}
+  .btn{
+    border:1px solid var(--border); background:var(--panel2); color:var(--text);
+    padding:9px 14px; border-radius:10px; font-size:13.5px; cursor:pointer;
+  }
+  .btn:active{opacity:.7;}
+  .btn.primary{background:var(--accent); border-color:var(--accent); color:#fff; font-weight:700;}
+  .btn.danger{background:transparent; border-color:var(--danger); color:var(--danger);}
+  .btn.ghost{background:transparent;}
+  .btn.block{width:100%; padding:12px; font-size:15px;}
+  .btn[disabled]{opacity:.4; pointer-events:none;}
+
+  .section-label{font-size:12px; color:var(--sub); margin:4px 2px 8px; font-weight:600;}
+
+  .quick-tags{display:flex; flex-wrap:wrap; gap:8px; margin-bottom:14px;}
+  .chip{
+    border:1px solid var(--border); background:var(--panel); color:var(--text);
+    padding:9px 14px; border-radius:999px; font-size:13.5px; cursor:pointer;
+    display:flex; align-items:center; gap:4px;
+  }
+  .chip:active{background:var(--panel2); transform:scale(.97);}
+  .chip.add{color:var(--sub); border-style:dashed;}
+  .chip.selected{background:var(--accent-dim); border-color:var(--accent); color:#fff;}
+
+  .memo-list{display:flex; flex-direction:column; gap:8px;}
+  .memo-item{
+    background:var(--panel); border:1px solid var(--border); border-radius:12px;
+    padding:10px 12px; cursor:pointer;
+  }
+  .memo-item:active{background:var(--panel2);}
+  .memo-row{display:flex; align-items:baseline; gap:8px;}
+  .memo-t{
+    font-variant-numeric:tabular-nums; color:var(--accent); font-weight:700; font-size:13px; flex:0 0 auto;
+  }
+  .memo-text{font-size:14.5px; line-height:1.5; flex:1 1 auto; word-break:break-word; white-space:pre-wrap;}
+  .memo-text.empty{color:var(--sub); font-style:italic;}
+  .memo-tags{display:flex; gap:6px; margin-top:6px; flex-wrap:wrap;}
+  .tag-pill{
+    font-size:11px; color:var(--sub); background:var(--panel2); border:1px solid var(--border);
+    border-radius:999px; padding:2px 8px;
+  }
+  .empty-state{color:var(--sub); font-size:13.5px; text-align:center; padding:40px 20px; line-height:1.8;}
+
+  .fab{
+    position:fixed; left:50%; transform:translateX(-50%);
+    bottom:calc(78px + var(--safe-b));
+    background:var(--accent); color:#fff; border:none; border-radius:999px;
+    padding:16px 30px; font-size:16px; font-weight:800; box-shadow:0 6px 20px rgba(29,155,240,.4);
+    cursor:pointer; z-index:20; max-width:560px;
+  }
+  .fab:active{transform:translateX(-50%) scale(.96);}
+  .fab.hidden{display:none;}
+
+  .bottom-nav{
+    position:fixed; left:0; right:0; bottom:0; z-index:15;
+    max-width:560px; margin:0 auto;
+    display:flex; border-top:1px solid var(--border); background:var(--bg);
+    padding-bottom:var(--safe-b);
+  }
+  .nav-btn{
+    flex:1; background:none; border:none; color:var(--sub); font-size:12.5px;
+    padding:10px 0 8px; cursor:pointer; display:flex; flex-direction:column; align-items:center; gap:2px;
+  }
+  .nav-btn .ic{font-size:20px;}
+  .nav-btn.active{color:var(--accent);}
+
+  .session-list{display:flex; flex-direction:column; gap:10px;}
+  .session-row{
+    background:var(--panel); border:1px solid var(--border); border-radius:14px;
+    padding:14px; cursor:pointer;
+  }
+  .session-row:active{background:var(--panel2);}
+  .session-row .t1{font-weight:700; font-size:15px; word-break:break-word;}
+  .session-row .t2{font-size:12px; color:var(--sub); margin-top:4px;}
+  .session-row .live{color:var(--accent); font-weight:700;}
+
+  .detail-header{margin-bottom:14px;}
+  .detail-actions{display:flex; gap:8px; margin-top:12px; flex-wrap:wrap;}
+
+  /* シート(モーダル) */
+  .sheet{position:fixed; inset:0; z-index:50; display:flex; align-items:flex-end; justify-content:center;}
+  .sheet.hidden{display:none;}
+  .sheet-backdrop{position:absolute; inset:0; background:rgba(0,0,0,.55);}
+  .sheet-panel{
+    position:relative; width:100%; max-width:560px; background:var(--panel);
+    border-radius:20px 20px 0 0; padding:16px 16px calc(20px + var(--safe-b));
+    border:1px solid var(--border); border-bottom:none;
+    max-height:85dvh; overflow-y:auto;
+  }
+  .sheet-title{font-size:15px; font-weight:700; margin-bottom:12px;}
+  .sheet-time{display:flex; align-items:center; justify-content:center; gap:14px; margin-bottom:14px;}
+  .sheet-time .t{
+    font-variant-numeric:tabular-nums; font-size:30px; font-weight:800; color:var(--accent);
+    min-width:120px; text-align:center; cursor:pointer;
+  }
+  .adjust{
+    border:1px solid var(--border); background:var(--panel2); color:var(--text);
+    border-radius:10px; padding:8px 12px; font-size:13px; cursor:pointer;
+  }
+  textarea, input[type=text], input[type=url]{
+    width:100%; background:var(--panel2); border:1px solid var(--border); color:var(--text);
+    border-radius:10px; padding:11px 12px; font-size:15px; font-family:inherit; resize:none;
+  }
+  textarea:focus, input:focus{outline:2px solid var(--accent); outline-offset:0;}
+  .field-label{font-size:12px; color:var(--sub); margin:12px 2px 6px;}
+  .tag-row{display:flex; flex-wrap:wrap; gap:8px; margin-top:10px;}
+  .add-tag-row{display:flex; gap:8px; margin-top:10px;}
+  .add-tag-row input{flex:1;}
+  .sheet-buttons{display:flex; gap:10px; margin-top:18px;}
+  .sheet-buttons .btn{flex:1;}
+
+  .toast{
+    position:fixed; left:50%; bottom:calc(150px + var(--safe-b)); transform:translateX(-50%);
+    background:#2a2f3c; color:#fff; padding:10px 16px; border-radius:999px; font-size:13.5px;
+    display:flex; align-items:center; gap:10px; z-index:60; box-shadow:0 4px 16px rgba(0,0,0,.4);
+    opacity:0; pointer-events:none; transition:opacity .18s;
+  }
+  .toast.show{opacity:1; pointer-events:auto;}
+  .toast button{background:none; border:none; color:var(--accent); font-weight:700; font-size:13.5px; cursor:pointer;}
+</style>
+</head>
+<body>
+<div id="app">
+
+  <header class="topbar">
+    <div class="brand">📝 配信メモ</div>
+    <button class="iconbtn" id="helpBtn" aria-label="使い方">?</button>
+  </header>
+
+  <!-- ホーム(記録)画面 -->
+  <main class="view" id="homeView">
+    <div class="session-card" id="sessionCard"></div>
+    <div id="quickTagsWrap"></div>
+    <div class="section-label" id="memoListLabel"></div>
+    <div class="memo-list" id="memoList"></div>
+  </main>
+
+  <!-- 履歴画面 -->
+  <main class="view hidden" id="historyView">
+    <div class="section-label">配信履歴</div>
+    <div class="session-list" id="sessionList"></div>
+  </main>
+
+  <!-- 履歴の配信詳細画面 -->
+  <main class="view hidden" id="detailView">
+    <button class="btn ghost" id="backToHistoryBtn">← 履歴に戻る</button>
+    <div class="detail-header" id="detailHeader"></div>
+    <div class="memo-list" id="detailMemoList"></div>
+  </main>
+
+  <button class="fab" id="recordBtn">＋ メモを記録</button>
+
+  <nav class="bottom-nav">
+    <button class="nav-btn active" data-view="home"><span class="ic">●</span>記録</button>
+    <button class="nav-btn" data-view="history"><span class="ic">📚</span>履歴</button>
+  </nav>
+</div>
+
+<!-- メモ入力/編集シート -->
+<div class="sheet hidden" id="memoSheet">
+  <div class="sheet-backdrop"></div>
+  <div class="sheet-panel">
+    <div class="sheet-title" id="memoSheetTitle">メモを記録</div>
+    <div class="sheet-time">
+      <button class="adjust" id="timeMinus">-10秒</button>
+      <div class="t" id="sheetTime">00:00</div>
+      <button class="adjust" id="timePlus">+10秒</button>
+    </div>
+    <textarea id="memoText" rows="3" placeholder="どうした？（空欄でもOK・タグだけでも記録できます）"></textarea>
+    <div class="field-label">タグ</div>
+    <div class="tag-row" id="sheetTagRow"></div>
+    <div class="add-tag-row">
+      <input type="text" id="newTagInput" placeholder="新しいタグを追加">
+      <button class="btn" id="addTagBtn">追加</button>
+    </div>
+    <div class="sheet-buttons">
+      <button class="btn" id="deleteMemoBtn" style="display:none;">削除</button>
+      <button class="btn ghost" id="cancelMemoBtn">キャンセル</button>
+      <button class="btn primary" id="saveMemoBtn">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- 配信タイトル/URL 編集シート -->
+<div class="sheet hidden" id="sessionSheet">
+  <div class="sheet-backdrop"></div>
+  <div class="sheet-panel">
+    <div class="sheet-title">配信の情報</div>
+    <div class="field-label">タイトル</div>
+    <input type="text" id="sessionTitleInput" placeholder="例：8/9 雑談配信">
+    <div class="field-label">配信URL（任意）</div>
+    <input type="url" id="sessionUrlInput" placeholder="https://...">
+    <div class="sheet-buttons">
+      <button class="btn ghost" id="cancelSessionBtn">キャンセル</button>
+      <button class="btn primary" id="saveSessionBtn">保存</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast">
+  <span id="toastMsg"></span>
+  <button id="toastAction" style="display:none;"></button>
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  var STORAGE_KEY = 'haisin-memo-v1';
+  var DEFAULT_TAGS = ['見どころ','爆笑','神対応','神回','気になる','神発言'];
+
+  function loadState(){
+    try{
+      var raw = localStorage.getItem(STORAGE_KEY);
+      if(!raw) throw 0;
+      var s = JSON.parse(raw);
+      if(!s.sessions) throw 0;
+      return s;
+    }catch(e){
+      return { sessions: [], activeSessionId: null, tagPresets: DEFAULT_TAGS.slice() };
+    }
+  }
+  var state = loadState();
+  function save(){ localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
+
+  function uid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2,8); }
+
+  function findSession(id){
+    for(var i=0;i<state.sessions.length;i++) if(state.sessions[i].id===id) return state.sessions[i];
+    return null;
+  }
+  function activeSession(){ return state.activeSessionId ? findSession(state.activeSessionId) : null; }
+
+  function pad(n){ return n<10 ? '0'+n : ''+n; }
+  function formatElapsed(sec){
+    sec = Math.max(0, Math.round(sec));
+    var h = Math.floor(sec/3600), m = Math.floor((sec%3600)/60), s = sec%60;
+    if(h>0) return h+':'+pad(m)+':'+pad(s);
+    return pad(m)+':'+pad(s);
+  }
+  function parseTimeInput(str, fallback){
+    var parts = String(str).trim().split(':').map(function(x){ return parseInt(x,10); });
+    if(parts.some(isNaN)) return fallback;
+    var sec = 0;
+    for(var i=0;i<parts.length;i++) sec = sec*60 + parts[i];
+    return Math.max(0, sec);
+  }
+  function formatDateTime(ms){
+    var d = new Date(ms);
+    return d.getFullYear()+'/'+pad(d.getMonth()+1)+'/'+pad(d.getDate())+' '+pad(d.getHours())+':'+pad(d.getMinutes());
+  }
+
+  function currentElapsedSec(session){
+    if(!session) return 0;
+    var end = session.endedAt || Date.now();
+    return Math.floor((end - session.startedAt)/1000);
+  }
+
+  // ---------- Toast ----------
+  var toastEl = document.getElementById('toast');
+  var toastMsg = document.getElementById('toastMsg');
+  var toastAction = document.getElementById('toastAction');
+  var toastTimer = null;
+  function showToast(msg, actionLabel, actionFn){
+    toastMsg.textContent = msg;
+    if(actionLabel && actionFn){
+      toastAction.style.display = '';
+      toastAction.textContent = actionLabel;
+      toastAction.onclick = function(){ actionFn(); hideToast(); };
+    } else {
+      toastAction.style.display = 'none';
+      toastAction.onclick = null;
+    }
+    toastEl.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(hideToast, 4000);
+  }
+  function hideToast(){ toastEl.classList.remove('show'); }
+
+  // ---------- ナビゲーション ----------
+  var views = { home: document.getElementById('homeView'), history: document.getElementById('historyView'), detail: document.getElementById('detailView') };
+  var navBtns = document.querySelectorAll('.nav-btn');
+  var currentView = 'home';
+  var detailSessionId = null;
+
+  function showView(name){
+    currentView = name;
+    Object.keys(views).forEach(function(k){ views[k].classList.toggle('hidden', k!==name); });
+    navBtns.forEach(function(b){ b.classList.toggle('active', b.dataset.view===name); });
+    document.getElementById('recordBtn').classList.toggle('hidden', name!=='home');
+    if(name==='home') renderHome();
+    if(name==='history') renderHistory();
+    if(name==='detail') renderDetail();
+  }
+  navBtns.forEach(function(b){
+    b.addEventListener('click', function(){ showView(b.dataset.view); });
+  });
+
+  // ---------- ホーム画面 ----------
+  var sessionCard = document.getElementById('sessionCard');
+  var quickTagsWrap = document.getElementById('quickTagsWrap');
+  var memoListLabel = document.getElementById('memoListLabel');
+  var memoListEl = document.getElementById('memoList');
+  var selectedQuickTags = {};
+
+  function ensureActiveSession(){
+    var s = activeSession();
+    if(s) return s;
+    var now = new Date();
+    s = {
+      id: uid(),
+      title: '配信 ' + (now.getMonth()+1) + '/' + now.getDate() + ' ' + pad(now.getHours()) + ':' + pad(now.getMinutes()),
+      url: '',
+      startedAt: Date.now(),
+      endedAt: null,
+      memos: []
+    };
+    state.sessions.push(s);
+    state.activeSessionId = s.id;
+    save();
+    return s;
+  }
+
+  function renderHome(){
+    var s = activeSession();
+    if(!s){
+      sessionCard.innerHTML =
+        '<div class="session-title">配信は開始していません</div>' +
+        '<div class="session-hint">下のタグや「＋ メモを記録」をタップすると、その瞬間から自動で配信が始まります。先にタイトルを決めたい場合は「配信情報を編集」から。</div>' +
+        '<div class="session-actions">' +
+          '<button class="btn" id="editSessionBtn">配信情報を編集して開始</button>' +
+        '</div>';
+      document.getElementById('editSessionBtn').addEventListener('click', function(){ openSessionSheet(true); });
+      renderQuickTags(quickTagsWrap, function(tagName){ quickLogMemo(tagName); });
+      memoListLabel.textContent = '';
+      memoListEl.innerHTML = '';
+      return;
+    }
+    sessionCard.innerHTML =
+      '<div class="session-title"></div>' +
+      '<div class="session-url"></div>' +
+      '<div class="timer" id="timerDisplay">00:00</div>' +
+      '<div class="session-actions">' +
+        '<button class="btn" id="editSessionBtn">タイトル/URLを編集</button>' +
+        '<button class="btn danger" id="endSessionBtn">配信を終了して保存</button>' +
+      '</div>';
+    sessionCard.querySelector('.session-title').textContent = s.title;
+    var urlEl = sessionCard.querySelector('.session-url');
+    if(s.url){ urlEl.textContent = s.url; } else { urlEl.textContent=''; }
+    document.getElementById('editSessionBtn').addEventListener('click', function(){ openSessionSheet(false); });
+    document.getElementById('endSessionBtn').addEventListener('click', endActiveSession);
+    updateTimerDisplay();
+
+    renderQuickTags(quickTagsWrap, function(tagName){ quickLogMemo(tagName); });
+
+    memoListLabel.textContent = 'メモ（' + s.memos.length + '件）';
+    renderMemoItems(memoListEl, s.memos, function(memo){ openMemoSheet(memo.id); });
+    memoListEl.scrollTop = memoListEl.scrollHeight;
+  }
+
+  function renderQuickTags(container, onTap){
+    var html = state.tagPresets.map(function(t){
+      return '<button class="chip" data-tag="'+escapeAttr(t)+'">'+escapeHtml(t)+'</button>';
+    }).join('');
+    container.innerHTML = '<div class="quick-tags">'+html+'</div>';
+    container.querySelectorAll('.chip').forEach(function(el){
+      el.addEventListener('click', function(){ onTap(el.dataset.tag); });
+    });
+  }
+
+  function quickLogMemo(tagName){
+    var s = ensureActiveSession();
+    var t = currentElapsedSec(s);
+    var memo = { id: uid(), t: t, text: '', tags: [tagName], createdAt: Date.now() };
+    s.memos.push(memo);
+    save();
+    renderHome();
+    showToast(formatElapsed(t) + ' 「' + tagName + '」を記録しました', '取り消す', function(){
+      var idx = s.memos.findIndex(function(m){ return m.id===memo.id; });
+      if(idx>=0) s.memos.splice(idx,1);
+      save();
+      if(currentView==='home') renderHome();
+    });
+  }
+
+  function renderMemoItems(container, memos, onTap){
+    if(!memos.length){
+      container.innerHTML = '<div class="empty-state">まだメモがありません。上のタグをタップするか、「＋ メモを記録」で書き込んでみましょう。</div>';
+      return;
+    }
+    var sorted = memos.slice().sort(function(a,b){ return a.t-b.t; });
+    container.innerHTML = sorted.map(function(m){
+      var tagsHtml = m.tags && m.tags.length
+        ? '<div class="memo-tags">' + m.tags.map(function(t){ return '<span class="tag-pill">'+escapeHtml(t)+'</span>'; }).join('') + '</div>'
+        : '';
+      var textHtml = m.text
+        ? '<div class="memo-text">'+escapeHtml(m.text)+'</div>'
+        : '<div class="memo-text empty">（本文なし）</div>';
+      return '<div class="memo-item" data-id="'+m.id+'">' +
+        '<div class="memo-row"><div class="memo-t">'+formatElapsed(m.t)+'</div>'+textHtml+'</div>' +
+        tagsHtml +
+        '</div>';
+    }).join('');
+    container.querySelectorAll('.memo-item').forEach(function(el){
+      el.addEventListener('click', function(){
+        var m = memos.find(function(x){ return x.id===el.dataset.id; });
+        if(m) onTap(m);
+      });
+    });
+  }
+
+  var timerInterval = setInterval(function(){
+    if(currentView==='home') updateTimerDisplay();
+  }, 500);
+  function updateTimerDisplay(){
+    var s = activeSession();
+    var el = document.getElementById('timerDisplay');
+    if(!s || !el) return;
+    el.textContent = formatElapsed(currentElapsedSec(s));
+  }
+
+  function endActiveSession(){
+    var s = activeSession();
+    if(!s) return;
+    if(!confirm('配信を終了して履歴に保存します。よろしいですか？')) return;
+    s.endedAt = Date.now();
+    state.activeSessionId = null;
+    save();
+    renderHome();
+    showToast('配信メモを保存しました');
+  }
+
+  // ---------- 配信情報 編集シート ----------
+  var sessionSheet = document.getElementById('sessionSheet');
+  var sessionTitleInput = document.getElementById('sessionTitleInput');
+  var sessionUrlInput = document.getElementById('sessionUrlInput');
+  var editingIsNew = false;
+
+  function openSessionSheet(isNew){
+    editingIsNew = isNew;
+    var s = activeSession();
+    sessionTitleInput.value = s ? s.title : '';
+    sessionUrlInput.value = s ? (s.url||'') : '';
+    sessionSheet.classList.remove('hidden');
+    setTimeout(function(){ sessionTitleInput.focus(); }, 50);
+  }
+  function closeSessionSheet(){ sessionSheet.classList.add('hidden'); }
+  document.getElementById('cancelSessionBtn').addEventListener('click', closeSessionSheet);
+  sessionSheet.querySelector('.sheet-backdrop').addEventListener('click', closeSessionSheet);
+  document.getElementById('saveSessionBtn').addEventListener('click', function(){
+    var s = ensureActiveSession();
+    var title = sessionTitleInput.value.trim();
+    s.title = title || s.title;
+    s.url = sessionUrlInput.value.trim();
+    save();
+    closeSessionSheet();
+    renderHome();
+  });
+
+  // ---------- メモ入力/編集シート ----------
+  var memoSheet = document.getElementById('memoSheet');
+  var memoSheetTitle = document.getElementById('memoSheetTitle');
+  var sheetTimeEl = document.getElementById('sheetTime');
+  var memoTextEl = document.getElementById('memoText');
+  var sheetTagRow = document.getElementById('sheetTagRow');
+  var newTagInput = document.getElementById('newTagInput');
+  var deleteMemoBtn = document.getElementById('deleteMemoBtn');
+
+  var editingMemoId = null;   // null = 新規
+  var editingTime = 0;
+  var editingTags = {};
+
+  function openMemoSheet(memoId){
+    var s = ensureActiveSession();
+    editingMemoId = memoId || null;
+    var memo = editingMemoId ? s.memos.find(function(m){ return m.id===editingMemoId; }) : null;
+
+    editingTime = memo ? memo.t : currentElapsedSec(s);
+    editingTags = {};
+    (memo ? memo.tags : []).forEach(function(t){ editingTags[t]=true; });
+
+    memoSheetTitle.textContent = memo ? 'メモを編集' : 'メモを記録';
+    memoTextEl.value = memo ? memo.text : '';
+    deleteMemoBtn.style.display = memo ? '' : 'none';
+    renderSheetTime();
+    renderSheetTags();
+    memoSheet.classList.remove('hidden');
+    if(!memo){ setTimeout(function(){ memoTextEl.focus(); }, 80); }
+  }
+  function closeMemoSheet(){ memoSheet.classList.add('hidden'); newTagInput.value=''; }
+
+  function renderSheetTime(){ sheetTimeEl.textContent = formatElapsed(editingTime); }
+  document.getElementById('timeMinus').addEventListener('click', function(){ editingTime = Math.max(0, editingTime-10); renderSheetTime(); });
+  document.getElementById('timePlus').addEventListener('click', function(){ editingTime += 10; renderSheetTime(); });
+  sheetTimeEl.addEventListener('click', function(){
+    var input = prompt('時刻を mm:ss または h:mm:ss で入力', formatElapsed(editingTime));
+    if(input===null) return;
+    editingTime = parseTimeInput(input, editingTime);
+    renderSheetTime();
+  });
+
+  function renderSheetTags(){
+    var allTags = state.tagPresets.slice();
+    Object.keys(editingTags).forEach(function(t){ if(allTags.indexOf(t)===-1) allTags.push(t); });
+    sheetTagRow.innerHTML = allTags.map(function(t){
+      var sel = editingTags[t] ? ' selected' : '';
+      return '<button type="button" class="chip'+sel+'" data-tag="'+escapeAttr(t)+'">'+escapeHtml(t)+'</button>';
+    }).join('');
+    sheetTagRow.querySelectorAll('.chip').forEach(function(el){
+      el.addEventListener('click', function(){
+        var t = el.dataset.tag;
+        if(editingTags[t]) delete editingTags[t]; else editingTags[t]=true;
+        renderSheetTags();
+      });
+    });
+  }
+  document.getElementById('addTagBtn').addEventListener('click', addNewTagFromInput);
+  newTagInput.addEventListener('keydown', function(e){ if(e.key==='Enter'){ e.preventDefault(); addNewTagFromInput(); } });
+  function addNewTagFromInput(){
+    var t = newTagInput.value.trim();
+    if(!t) return;
+    if(state.tagPresets.indexOf(t)===-1) state.tagPresets.push(t);
+    editingTags[t] = true;
+    newTagInput.value = '';
+    save();
+    renderSheetTags();
+  }
+
+  document.getElementById('cancelMemoBtn').addEventListener('click', closeMemoSheet);
+  memoSheet.querySelector('.sheet-backdrop').addEventListener('click', closeMemoSheet);
+
+  document.getElementById('saveMemoBtn').addEventListener('click', function(){
+    var s = ensureActiveSession();
+    var tags = Object.keys(editingTags);
+    var text = memoTextEl.value.trim();
+    if(editingMemoId){
+      var m = s.memos.find(function(x){ return x.id===editingMemoId; });
+      if(m){ m.t = editingTime; m.text = text; m.tags = tags; }
+    } else {
+      s.memos.push({ id: uid(), t: editingTime, text: text, tags: tags, createdAt: Date.now() });
+    }
+    save();
+    closeMemoSheet();
+    renderHome();
+  });
+
+  deleteMemoBtn.addEventListener('click', function(){
+    var s = ensureActiveSession();
+    if(!editingMemoId) return;
+    var idx = s.memos.findIndex(function(x){ return x.id===editingMemoId; });
+    if(idx>=0 && confirm('このメモを削除しますか？')){
+      s.memos.splice(idx,1);
+      save();
+      closeMemoSheet();
+      renderHome();
+    }
+  });
+
+  document.getElementById('recordBtn').addEventListener('click', function(){ openMemoSheet(null); });
+
+  // ---------- 履歴画面 ----------
+  var sessionListEl = document.getElementById('sessionList');
+  function renderHistory(){
+    var list = state.sessions.slice().sort(function(a,b){ return b.startedAt-a.startedAt; });
+    if(!list.length){
+      sessionListEl.innerHTML = '<div class="empty-state">まだ履歴はありません。</div>';
+      return;
+    }
+    sessionListEl.innerHTML = list.map(function(s){
+      var isLive = s.id===state.activeSessionId;
+      var dur = formatElapsed(currentElapsedSec(s));
+      return '<div class="session-row" data-id="'+s.id+'">' +
+        '<div class="t1">'+escapeHtml(s.title)+(isLive?' <span class="live">● 記録中</span>':'')+'</div>' +
+        '<div class="t2">'+formatDateTime(s.startedAt)+' ・ '+dur+' ・ メモ'+s.memos.length+'件</div>' +
+        '</div>';
+    }).join('');
+    sessionListEl.querySelectorAll('.session-row').forEach(function(el){
+      el.addEventListener('click', function(){
+        detailSessionId = el.dataset.id;
+        showView('detail');
+      });
+    });
+  }
+
+  // ---------- 詳細画面 ----------
+  var detailHeader = document.getElementById('detailHeader');
+  var detailMemoList = document.getElementById('detailMemoList');
+  document.getElementById('backToHistoryBtn').addEventListener('click', function(){ showView('history'); });
+
+  function buildExportText(s){
+    var lines = [];
+    lines.push('■ ' + s.title);
+    if(s.url) lines.push(s.url);
+    lines.push(formatDateTime(s.startedAt) + ' 開始');
+    lines.push('');
+    s.memos.slice().sort(function(a,b){ return a.t-b.t; }).forEach(function(m){
+      var tagStr = m.tags && m.tags.length ? ' ['+m.tags.join(' ')+']' : '';
+      lines.push(formatElapsed(m.t) + ' ' + m.text + tagStr);
+    });
+    return lines.join('\n');
+  }
+
+  function copyToClipboard(text){
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(text).then(function(){
+        showToast('コピーしました');
+      }).catch(function(){ fallbackCopy(text); });
+    } else {
+      fallbackCopy(text);
+    }
+  }
+  function fallbackCopy(text){
+    var ta = document.createElement('textarea');
+    ta.value = text; ta.style.position='fixed'; ta.style.opacity='0';
+    document.body.appendChild(ta); ta.focus(); ta.select();
+    try{ document.execCommand('copy'); showToast('コピーしました'); }catch(e){ showToast('コピーに失敗しました'); }
+    document.body.removeChild(ta);
+  }
+
+  function renderDetail(){
+    var s = findSession(detailSessionId);
+    if(!s){ showView('history'); return; }
+    var isLive = s.id===state.activeSessionId;
+    detailHeader.innerHTML =
+      '<div class="session-title">'+escapeHtml(s.title)+(isLive?' <span class="live" style="font-size:13px;">● 記録中</span>':'')+'</div>' +
+      (s.url ? '<div class="session-url">'+escapeHtml(s.url)+'</div>' : '') +
+      '<div class="session-hint" style="margin-top:8px;">'+formatDateTime(s.startedAt)+' 開始 ・ 長さ '+formatElapsed(currentElapsedSec(s))+' ・ メモ'+s.memos.length+'件</div>' +
+      '<div class="detail-actions">' +
+        '<button class="btn" id="copyBtn">📋 テキストをコピー</button>' +
+        (isLive ? '' : '<button class="btn danger" id="deleteSessionBtn">この配信メモを削除</button>') +
+      '</div>';
+    document.getElementById('copyBtn').addEventListener('click', function(){ copyToClipboard(buildExportText(s)); });
+    var delBtn = document.getElementById('deleteSessionBtn');
+    if(delBtn){
+      delBtn.addEventListener('click', function(){
+        if(confirm('この配信のメモをすべて削除します。よろしいですか？')){
+          var idx = state.sessions.findIndex(function(x){ return x.id===s.id; });
+          if(idx>=0) state.sessions.splice(idx,1);
+          save();
+          showView('history');
+        }
+      });
+    }
+    renderMemoItems(detailMemoList, s.memos, function(){ /* 履歴内は閲覧のみ */ });
+  }
+
+  // ---------- ヘルプ ----------
+  document.getElementById('helpBtn').addEventListener('click', function(){
+    alert(
+      '【使い方】\n' +
+      '・「＋ メモを記録」または上部のタグをタップすると、配信が自動で始まりその瞬間の時間が記録されます。\n' +
+      '・タグをタップするだけで本文なしのメモを一瞬で残せます。あとでタップして本文を追記できます。\n' +
+      '・「履歴」から過去の配信メモを見返したり、テキストとしてコピーできます。\n' +
+      '・データはこの端末内だけに保存されます（他の端末とは同期しません）。'
+    );
+  });
+
+  // ---------- ユーティリティ ----------
+  function escapeHtml(str){
+    return String(str).replace(/[&<>"']/g, function(c){
+      return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+    });
+  }
+  function escapeAttr(str){ return escapeHtml(str); }
+
+  // ---------- 初期化 ----------
+  showView('home');
+
+  if('serviceWorker' in navigator && location.protocol.indexOf('http')===0){
+    window.addEventListener('load', function(){
+      navigator.serviceWorker.register('./sw.js').catch(function(){});
+    });
+  }
+})();
+</script>
+</body>
+</html>
