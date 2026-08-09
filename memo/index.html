@@ -113,6 +113,13 @@
   .yt-offset-row{display:flex; gap:6px;}
   .yt-offset-row .adjust{padding:6px 10px; font-size:12px;}
 
+  .quick-memo-card{margin-bottom:14px;}
+  .quick-memo-card textarea{
+    width:100%; min-height:120px; background:var(--panel); border:1px solid var(--border); color:var(--text);
+    border-radius:14px; padding:14px; font-size:16px; line-height:1.6; font-family:inherit; resize:vertical;
+  }
+  .quick-memo-card textarea:focus{outline:2px solid var(--accent); outline-offset:0;}
+
   .quick-tags{display:flex; flex-wrap:wrap; gap:8px; margin-bottom:14px;}
   .chip{
     border:1px solid var(--border); background:var(--panel); color:var(--text);
@@ -268,6 +275,11 @@
       </div>
     </div>
 
+    <!-- 常時表示のメモ入力欄。ここに書いた内容が下のボタンで即タイムスタンプ付き記録される -->
+    <div class="quick-memo-card">
+      <textarea id="quickMemoText" rows="4" placeholder="ここにメモを書きながら配信を見て、下のボタンでその瞬間を記録"></textarea>
+    </div>
+
     <div id="quickTagsWrap"></div>
     <div class="section-label" id="memoListLabel"></div>
     <div class="memo-list" id="memoList"></div>
@@ -286,7 +298,7 @@
     <div class="memo-list" id="detailMemoList"></div>
   </main>
 
-  <button class="fab" id="recordBtn">＋ メモを記録</button>
+  <button class="fab" id="recordBtn">⏱ この瞬間を記録</button>
 
   <nav class="bottom-nav">
     <button class="nav-btn active" data-view="home"><span class="ic">●</span>記録</button>
@@ -676,6 +688,7 @@
   var quickTagsWrap = document.getElementById('quickTagsWrap');
   var memoListLabel = document.getElementById('memoListLabel');
   var memoListEl = document.getElementById('memoList');
+  var quickMemoTextEl = document.getElementById('quickMemoText');
   var selectedQuickTags = {};
 
   function ensureActiveSession(){
@@ -701,7 +714,7 @@
     if(!s){
       sessionCard.innerHTML =
         '<div class="session-title">配信は開始していません</div>' +
-        '<div class="session-hint">下のタグや「＋ メモを記録」をタップすると、その瞬間から自動で配信が始まります。先にタイトルを決めたい場合は「配信情報を編集」から。</div>' +
+        '<div class="session-hint">下のタグや「⏱ この瞬間を記録」をタップすると、その瞬間から自動で配信が始まります。先にタイトルを決めたい場合は「配信情報を編集」から。</div>' +
         '<div class="session-actions">' +
           '<button class="btn" id="editSessionBtn">配信情報を編集して開始</button>' +
         '</div>';
@@ -744,6 +757,25 @@
     container.innerHTML = '<div class="quick-tags">'+html+'</div>';
     container.querySelectorAll('.chip').forEach(function(el){
       el.addEventListener('click', function(){ onTap(el.dataset.tag); });
+    });
+  }
+
+  // 常時表示のテキストボックスの内容を、その瞬間のタイムスタンプで記録する。
+  // ダイアログを開かず、書きながら押すだけで済ませるための主動線。
+  function stampQuickMemo(){
+    var s = ensureActiveSession();
+    var t = currentElapsedSec(s);
+    var text = quickMemoTextEl.value.trim();
+    var memo = { id: uid(), t: t, text: text, tags: [], createdAt: Date.now() };
+    s.memos.push(memo);
+    save();
+    quickMemoTextEl.value = '';
+    renderHome();
+    showToast(formatElapsed(t) + ' を記録しました', '取り消す', function(){
+      var idx = s.memos.findIndex(function(m){ return m.id===memo.id; });
+      if(idx>=0) s.memos.splice(idx,1);
+      save();
+      if(currentView==='home') renderHome();
     });
   }
 
@@ -952,7 +984,7 @@
     }
   });
 
-  document.getElementById('recordBtn').addEventListener('click', function(){ openMemoSheet(null); });
+  document.getElementById('recordBtn').addEventListener('click', stampQuickMemo);
 
   // ---------- 履歴画面 ----------
   var sessionListEl = document.getElementById('sessionList');
@@ -1044,7 +1076,7 @@
   document.getElementById('helpBtn').addEventListener('click', function(){
     alert(
       '【使い方】\n' +
-      '・「＋ メモを記録」または上部のタグをタップすると、配信が自動で始まりその瞬間の時間が記録されます。\n' +
+      '・上のテキスト欄に配信を見ながら自由にメモを書いて、「⏱ この瞬間を記録」を押すと、その瞬間の時間とテキストがセットで記録され、欄は空になります(配信は自動で始まります)。\n' +
       '・タグをタップするだけで本文なしのメモを一瞬で残せます。あとでタップして本文を追記できます。\n' +
       '・「タイトル/URLを編集」から配信開始時刻を指定すると、そこを0:00として経過時間を正確に計算します。あとから直しても過去のメモの時間は自動でずれを補正します。\n' +
       '・「YouTube連携」に配信のURLを貼ると、配信の再生位置から経過時間を自動取得します（通信が必要・小さく動画が再生されます）。ズレを感じたら±5秒で微調整できます。\n' +
