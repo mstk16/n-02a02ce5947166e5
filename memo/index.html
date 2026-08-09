@@ -236,6 +236,18 @@
     .action-bar{max-width:none;}
   }
 
+  .yt-api-key-row.hidden{display:none;}
+  .yt-search-results{display:flex; flex-direction:column; gap:6px; margin-top:8px; max-height:280px; overflow-y:auto;}
+  .yt-search-item{
+    display:flex; gap:8px; align-items:center; background:var(--panel2); border:1px solid var(--border);
+    border-radius:10px; padding:6px; cursor:pointer;
+  }
+  .yt-search-item:active{opacity:.7;}
+  .yt-search-item img{width:64px; height:36px; object-fit:cover; border-radius:6px; flex:0 0 auto; background:#000;}
+  .yt-search-item-info{min-width:0;}
+  .yt-search-item-title{font-size:13px; font-weight:600; word-break:break-word; line-height:1.4;}
+  .yt-search-item-channel{font-size:11px; color:var(--sub); margin-top:2px;}
+
   .tag-manage-list{display:flex; flex-direction:column; gap:6px; margin-top:8px;}
   .tag-manage-row{
     display:flex; align-items:center; justify-content:space-between; gap:8px;
@@ -335,6 +347,18 @@
         <input type="text" id="ytUrlInput" placeholder="配信のYouTube URLを貼り付け">
         <button class="btn" id="ytLinkBtn">連携</button>
       </div>
+      <div class="add-tag-row" style="margin-top:8px;">
+        <input type="text" id="ytSearchInput" placeholder="または検索して開く">
+        <button class="btn" id="ytSearchBtn">検索</button>
+      </div>
+      <div class="yt-search-results" id="ytSearchResults"></div>
+      <button type="button" class="btn ghost" id="ytApiKeyToggleBtn" style="margin-top:6px; font-size:12px; padding:6px 10px;">検索用APIキーを設定</button>
+      <div class="yt-api-key-row hidden" id="ytApiKeyRow">
+        <div class="add-tag-row">
+          <input type="text" id="ytApiKeyInput" placeholder="AIza...（YouTube Data API v3キー）">
+          <button class="btn" id="ytApiKeySaveBtn">保存</button>
+        </div>
+      </div>
     </div>
     <div class="yt-settings hidden" id="ytSettingsBox">
       <div class="field-label">YouTube連携</div>
@@ -378,7 +402,7 @@
       if(!s.sessions) throw 0;
       return s;
     }catch(e){
-      return { sessions: [], activeSessionId: null, tagPresets: DEFAULT_TAGS.slice() };
+      return { sessions: [], activeSessionId: null, tagPresets: DEFAULT_TAGS.slice(), ytApiKey: '' };
     }
   }
   var state = loadState();
@@ -605,6 +629,92 @@
     document.getElementById('ytUrlInput').value = '';
     if(currentView==='home') renderHome();
   });
+
+  // ---------- YouTube検索(Data API v3・任意) ----------
+  // 検索(search.list)は1回100ユニット消費。既定の無料枠は1日10,000ユニット＝約100回/日。
+  // 超過時はエラーになるだけで自動課金はされない。
+  var ytApiKeyInput = document.getElementById('ytApiKeyInput');
+  var ytApiKeyRow = document.getElementById('ytApiKeyRow');
+  var ytApiKeyToggleBtn = document.getElementById('ytApiKeyToggleBtn');
+
+  ytApiKeyToggleBtn.addEventListener('click', function(){
+    var willShow = ytApiKeyRow.classList.contains('hidden');
+    ytApiKeyRow.classList.toggle('hidden', !willShow);
+    if(willShow){
+      ytApiKeyInput.value = state.ytApiKey || '';
+      setTimeout(function(){ ytApiKeyInput.focus(); }, 50);
+    }
+  });
+  document.getElementById('ytApiKeySaveBtn').addEventListener('click', function(){
+    var key = ytApiKeyInput.value.trim();
+    state.ytApiKey = key;
+    save();
+    ytApiKeyRow.classList.add('hidden');
+    showToast(key ? 'APIキーを保存しました' : 'APIキーを削除しました');
+  });
+
+  async function searchYouTube(query){
+    if(!query) return;
+    if(!state.ytApiKey){
+      showToast('先に「検索用APIキーを設定」からAPIキーを登録してください');
+      ytApiKeyRow.classList.remove('hidden');
+      return;
+    }
+    var resultsWrap = document.getElementById('ytSearchResults');
+    resultsWrap.innerHTML = '<div class="empty-state">検索中…</div>';
+    try{
+      var url = 'https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&maxResults=10&q=' +
+        encodeURIComponent(query) + '&key=' + encodeURIComponent(state.ytApiKey);
+      var res = await fetch(url);
+      var data = await res.json();
+      if(!res.ok){
+        resultsWrap.innerHTML = '';
+        showToast('検索に失敗しました（' + ((data.error && data.error.message) || res.status) + '）');
+        return;
+      }
+      renderYtSearchResults(data.items || []);
+    }catch(e){
+      resultsWrap.innerHTML = '';
+      showToast('検索に失敗しました（通信エラー）');
+    }
+  }
+
+  function renderYtSearchResults(items){
+    var wrap = document.getElementById('ytSearchResults');
+    if(!items.length){
+      wrap.innerHTML = '<div class="empty-state">見つかりませんでした</div>';
+      return;
+    }
+    wrap.innerHTML = items.map(function(it){
+      var vid = it.id && it.id.videoId;
+      var sn = it.snippet || {};
+      var thumb = sn.thumbnails && (sn.thumbnails.default || sn.thumbnails.medium || {}).url;
+      return '<div class="yt-search-item" data-vid="'+escapeAttr(vid||'')+'">' +
+        (thumb ? '<img src="'+escapeAttr(thumb)+'" alt="">' : '') +
+        '<div class="yt-search-item-info">' +
+          '<div class="yt-search-item-title">'+escapeHtml(sn.title||'')+'</div>' +
+          '<div class="yt-search-item-channel">'+escapeHtml(sn.channelTitle||'')+'</div>' +
+        '</div></div>';
+    }).join('');
+    wrap.querySelectorAll('.yt-search-item').forEach(function(el){
+      el.addEventListener('click', function(){
+        var vid = el.dataset.vid;
+        if(!vid) return;
+        var s = ensureActiveSession();
+        linkYouTube(s, vid);
+        wrap.innerHTML = '';
+        document.getElementById('ytSearchInput').value = '';
+        if(currentView==='home') renderHome();
+      });
+    });
+  }
+
+  document.getElementById('ytSearchBtn').addEventListener('click', function(){
+    searchYouTube(document.getElementById('ytSearchInput').value.trim());
+  });
+  document.getElementById('ytSearchInput').addEventListener('keydown', function(e){
+    if(e.key==='Enter'){ e.preventDefault(); searchYouTube(this.value.trim()); }
+  });
   document.getElementById('ytUnlinkBtn').addEventListener('click', function(){
     var s = activeSession();
     unlinkYouTube(s);
@@ -830,6 +940,9 @@
     document.getElementById('endSessionBtn').style.display = s ? '' : 'none';
     updateTimerDisplay();
     renderTagManageList();
+    document.getElementById('ytApiKeyRow').classList.add('hidden');
+    document.getElementById('ytSearchResults').innerHTML = '';
+    document.getElementById('ytSearchInput').value = '';
     sessionSheet.classList.remove('hidden');
   }
   function closeSessionSheet(){ sessionSheet.classList.add('hidden'); }
@@ -1114,7 +1227,7 @@
       '・上のテキスト欄に配信を見ながら自由にメモを書いて、右下のタイムスタンプボタン（00:00:00の表示）を押すと、その瞬間の時間とテキストがセットで記録され、欄は空になります(配信は自動で始まります)。\n' +
       '・タグをタップすると、メモ欄のカーソル位置にそのタグを挿入します（記録は右下のタイムスタンプボタンで行う）。「◆◇」はカーソルが◆と◇の間に来るので、そのまま中身を打ち込めます。タグは⚙設定の「クイックタグ」から自由に追加・削除できます。\n' +
       '・⚙（設定）は下帯の右端。YouTube連携の状態確認・連携解除、配信の終了はここから。\n' +
-      '・下帯のYouTube連携欄に配信のURLを貼ると、配信の再生位置から経過時間を自動取得します（通信が必要・右上に小さく動画が出ます）。ズレを感じたら⚙設定の中の±5秒で微調整できます。タイトルとURLは連携内容から自動で決まるので手入力は不要です。\n' +
+      '・⚙設定のYouTube連携欄にURLを貼るか、キーワードで検索して一覧から選ぶと、配信の再生位置から経過時間を自動取得します（通信が必要・右上に小さく動画が出ます）。検索にはAPIキーの登録が別途必要（「検索用APIキーを設定」から）。ズレを感じたら±5秒で微調整できます。タイトルとURLは連携内容から自動で決まるので手入力は不要です。\n' +
       '・画面が横長・正方形に近いくらい広いとき（分割画面など）は、左に動画とチャット、右にメモという2ペイン表示に自動で切り替わります。動画は音量ミュートで始まるので、必要ならプレーヤー上のボタンでミュート解除してください。\n' +
       '・「📚」から過去の配信メモを見返したり、テキストとしてコピーできます。\n' +
       '・画面が古いままだと感じたら、⚙を1.5秒長押しすると強制的に最新版を取得して再読み込みします。\n' +
