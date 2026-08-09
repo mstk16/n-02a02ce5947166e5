@@ -64,8 +64,22 @@
   .iconbtn:active{background:var(--panel2);}
   .iconbtn.pressing{background:var(--accent-dim); color:var(--accent);}
 
-  .view{flex:1 1 auto; overflow-y:auto; padding:14px 14px calc(72px + var(--safe-b)); display:flex; flex-direction:column;}
+  .view{flex:1 1 auto; overflow-y:auto; padding:14px 14px calc(128px + var(--safe-b)); display:flex; flex-direction:column;}
   .view.hidden{display:none;}
+  /* 常時見えるスクロールバー。Chromium系では効くが、モバイルのタッチスクロールでは
+     OS側が自動で細い一時表示バーに差し替えてしまい、反映されないコトがある */
+  .view{ scrollbar-width:auto; scrollbar-color: var(--sub) var(--panel2); }
+  .view::-webkit-scrollbar{ width:12px; }
+  .view::-webkit-scrollbar-track{ background:var(--panel2); }
+  .view::-webkit-scrollbar-thumb{ background:var(--sub); border-radius:999px; border:2px solid var(--panel2); }
+  .view::-webkit-scrollbar-thumb:active{ background:var(--accent); }
+  .view::-webkit-scrollbar-button{ display:block; height:14px; background:var(--panel2); }
+  .view::-webkit-scrollbar-button:vertical:start:decrement{
+    background:var(--panel2); border-bottom:5px solid var(--sub); border-left:5px solid transparent; border-right:5px solid transparent; height:0; margin:5px auto;
+  }
+  .view::-webkit-scrollbar-button:vertical:end:increment{
+    background:var(--panel2); border-top:5px solid var(--sub); border-left:5px solid transparent; border-right:5px solid transparent; height:0; margin:5px auto;
+  }
 
   .session-title{font-size:17px; font-weight:700; word-break:break-word;}
   .session-url{font-size:12px; color:var(--sub); margin-top:2px; word-break:break-all;}
@@ -148,27 +162,34 @@
   .action-bar{
     position:fixed; left:0; right:0; bottom:0; z-index:20;
     max-width:560px; margin:0 auto;
-    display:flex; align-items:center; gap:8px;
+    display:flex; align-items:center; justify-content:space-between; gap:8px;
     padding:8px 10px calc(8px + var(--safe-b));
     border-top:1px solid var(--border); background:var(--bg);
   }
   .record-chip{
-    flex:0 0 auto; background:var(--accent); color:#fff; font-weight:800;
-    font-variant-numeric:tabular-nums; border:none; border-radius:999px;
-    padding:10px 14px; font-size:14px; cursor:pointer; white-space:nowrap;
+    flex:0 0 auto; background:var(--accent); color:#fff;
+    border:none; border-radius:999px; width:40px; height:40px;
+    font-size:19px; line-height:1; cursor:pointer; display:flex; align-items:center; justify-content:center;
   }
   .record-chip:active{opacity:.8;}
   .record-chip.hidden{display:none;}
-  .action-bar-tags{
-    flex:1 1 auto; min-width:0; display:flex; gap:8px; overflow-x:auto; -webkit-overflow-scrolling:touch;
-  }
-  .action-bar-tags::-webkit-scrollbar{display:none;}
+  .action-bar-nav{flex:0 0 auto; display:flex; align-items:center; gap:2px;}
   .navchip{
     flex:0 0 auto; background:none; border:none; color:var(--sub); font-size:19px;
     padding:6px 8px; border-radius:8px; cursor:pointer;
   }
   .navchip.active{color:var(--accent);}
   .navchip:active, .iconbtn:active{background:var(--panel2);}
+
+  /* タグ専用の行。下帯(action-bar)のさらに上に重ねる */
+  .tag-bar{
+    position:fixed; left:0; right:0; bottom:calc(56px + var(--safe-b)); z-index:19;
+    max-width:560px; margin:0 auto;
+    display:flex; gap:8px; overflow-x:auto; -webkit-overflow-scrolling:touch;
+    padding:8px 10px; border-top:1px solid var(--border); background:var(--bg);
+  }
+  .tag-bar::-webkit-scrollbar{display:none;}
+  .tag-bar.hidden{display:none;}
 
   .session-list{display:flex; flex-direction:column; gap:10px;}
   .session-row{
@@ -232,7 +253,7 @@
   /* シアターモードでは#appが右ペインだけになるので、fixed系のUIも
      画面全体ではなく#app基準(position:relative)に収める */
   @media (min-width:700px){
-    .action-bar, .toast{position:absolute;}
+    .action-bar, .tag-bar, .toast{position:absolute;}
     .action-bar{max-width:none;}
   }
 
@@ -247,6 +268,17 @@
   .yt-search-item-info{min-width:0;}
   .yt-search-item-title{font-size:13px; font-weight:600; word-break:break-word; line-height:1.4;}
   .yt-search-item-channel{font-size:11px; color:var(--sub); margin-top:2px;}
+
+  .tag-set-list{display:flex; flex-direction:column; gap:6px; margin-top:8px;}
+  .tag-set-row{
+    display:flex; align-items:center; justify-content:space-between; gap:8px;
+    background:var(--panel2); border:1px solid var(--border); border-radius:10px; padding:8px 10px;
+  }
+  .tag-set-row.active{border-color:var(--accent);}
+  .tag-set-name{font-size:14px; word-break:break-all;}
+  .tag-set-row.active .tag-set-name{color:var(--accent); font-weight:700;}
+  .tag-set-actions{display:flex; align-items:center; gap:6px; flex:0 0 auto;}
+  .tag-set-actions .btn{padding:6px 10px; font-size:12.5px;}
 
   .tag-manage-list{display:flex; flex-direction:column; gap:6px; margin-top:8px;}
   .tag-manage-row{
@@ -293,13 +325,17 @@
     <div class="memo-list" id="detailMemoList"></div>
   </main>
 
-  <!-- 操作は全部この下帯1本に集約。設定は常に一番右 -->
+  <!-- タグ専用の行(記録画面のときだけ表示) -->
+  <div class="tag-bar" id="quickTagsWrap"></div>
+
+  <!-- 操作はこの下帯に集約。設定は常に一番右 -->
   <nav class="action-bar" id="actionBar">
-    <button class="record-chip" id="recordBtn">00:00:00</button>
-    <div class="action-bar-tags" id="quickTagsWrap"></div>
-    <button class="navchip active" id="navHomeBtn" data-view="home" aria-label="記録">📝</button>
-    <button class="navchip" id="navHistoryBtn" data-view="history" aria-label="履歴">📚</button>
-    <button class="iconbtn" id="settingsBtn" aria-label="設定">⚙</button>
+    <button class="record-chip" id="recordBtn" aria-label="この瞬間を記録">🕐</button>
+    <div class="action-bar-nav">
+      <button class="navchip active" id="navHomeBtn" data-view="home" aria-label="記録">📝</button>
+      <button class="navchip" id="navHistoryBtn" data-view="history" aria-label="履歴">📚</button>
+      <button class="iconbtn" id="settingsBtn" aria-label="設定">⚙</button>
+    </div>
   </nav>
 
   <div class="toast" id="toast">
@@ -370,7 +406,14 @@
       <button class="btn ghost" id="ytUnlinkBtn">連携解除</button>
     </div>
 
-    <div class="field-label">クイックタグ（メモ欄にテキスト挿入するボタン）</div>
+    <div class="field-label">ワードボタンのセット（「セット」を押した1つだけがメモ下に出る）</div>
+    <div class="tag-set-list" id="tagSetList"></div>
+    <div class="add-tag-row">
+      <input type="text" id="newTagSetInput" placeholder="新しいセット名（例：雑談用）">
+      <button class="btn" id="addTagSetBtn">追加</button>
+    </div>
+
+    <div class="field-label">「<span id="activeTagSetName"></span>」の中身</div>
     <div class="tag-manage-list" id="tagManageList"></div>
     <div class="add-tag-row">
       <input type="text" id="newPresetTagInput" placeholder="例：◆感想◇">
@@ -394,19 +437,42 @@
   var STORAGE_KEY = 'haisin-memo-v1';
   var DEFAULT_TAGS = ['◆◇','◆キャラ◇','◆語尾◇','◆かわいい◇','◆◇◆◇◆◇'];
 
+  function freshState(){
+    return {
+      sessions: [], activeSessionId: null,
+      tagSets: [{ id: 'default', name: 'デフォルト', tags: DEFAULT_TAGS.slice() }],
+      activeTagSetId: 'default',
+      ytApiKey: '',
+      draftText: ''
+    };
+  }
+  // 旧バージョン(タグがtagPresetsのフラット配列だった頃)からの移行
+  function migrateTagSets(s){
+    if(s.tagSets && s.tagSets.length) return;
+    s.tagSets = [{ id: 'default', name: 'デフォルト', tags: (s.tagPresets || DEFAULT_TAGS.slice()) }];
+    s.activeTagSetId = 'default';
+    delete s.tagPresets;
+  }
   function loadState(){
     try{
       var raw = localStorage.getItem(STORAGE_KEY);
       if(!raw) throw 0;
       var s = JSON.parse(raw);
       if(!s.sessions) throw 0;
+      var migrated = !s.tagSets || !s.tagSets.length;
+      migrateTagSets(s);
+      if(migrated) localStorage.setItem(STORAGE_KEY, JSON.stringify(s)); // 移行結果をその場で書き戻す
       return s;
     }catch(e){
-      return { sessions: [], activeSessionId: null, tagPresets: DEFAULT_TAGS.slice(), ytApiKey: '' };
+      return freshState();
     }
   }
   var state = loadState();
   function save(){ localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
+  function activeTagSet(){
+    var set = state.tagSets.filter(function(x){ return x.id===state.activeTagSetId; })[0];
+    return set || state.tagSets[0];
+  }
 
   function uid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2,8); }
 
@@ -422,12 +488,6 @@
     var h = Math.floor(sec/3600), m = Math.floor((sec%3600)/60), s = sec%60;
     if(h>0) return h+':'+pad(m)+':'+pad(s);
     return pad(m)+':'+pad(s);
-  }
-  // タイムスタンプボタン表示用。formatElapsedと違い、時が0でも "00:" を省略しない
-  function formatElapsedHMS(sec){
-    sec = Math.max(0, Math.round(sec));
-    var h = Math.floor(sec/3600), m = Math.floor((sec%3600)/60), s = sec%60;
-    return pad(h)+':'+pad(m)+':'+pad(s);
   }
   function parseTimeInput(str, fallback){
     var parts = String(str).trim().split(':').map(function(x){ return parseInt(x,10); });
@@ -787,6 +847,7 @@
     Object.keys(views).forEach(function(k){ views[k].classList.toggle('hidden', k!==name); });
     navBtns.forEach(function(b){ b.classList.toggle('active', b.dataset.view===name); });
     document.getElementById('recordBtn').classList.toggle('hidden', name!=='home');
+    document.getElementById('quickTagsWrap').classList.toggle('hidden', name!=='home');
     if(name!=='home') document.getElementById('quickTagsWrap').innerHTML = '';
     if(name==='home') renderHome();
     if(name==='history') renderHistory();
@@ -802,6 +863,15 @@
   var memoListEl = document.getElementById('memoList');
   var quickMemoTextEl = document.getElementById('quickMemoText');
   var selectedQuickTags = {};
+
+  // 記録前の下書きも消えないよう常に保存しておく(⚙長押しの強制アップデートは
+  // location.reload()するので、これが無いと打ちかけのメモが消えてしまう)
+  quickMemoTextEl.value = state.draftText || '';
+  function saveDraft(){
+    state.draftText = quickMemoTextEl.value;
+    save();
+  }
+  quickMemoTextEl.addEventListener('input', saveDraft);
 
   function ensureActiveSession(){
     var s = activeSession();
@@ -840,7 +910,7 @@
   }
 
   function renderQuickTags(container, onTap){
-    container.innerHTML = state.tagPresets.map(function(t){
+    container.innerHTML = activeTagSet().tags.map(function(t){
       return '<button class="chip" data-tag="'+escapeAttr(t)+'">'+escapeHtml(t)+'</button>';
     }).join('');
     container.querySelectorAll('.chip').forEach(function(el){
@@ -859,6 +929,7 @@
     el.value = el.value.slice(0, start) + tagName + el.value.slice(end);
     var cursorPos = (tagName === '◆◇') ? start + 1 : start + tagName.length;
     el.setSelectionRange(cursorPos, cursorPos);
+    saveDraft(); // .valueへの直接代入はinputイベントが飛ばないので明示的に保存する
   }
 
   // 常時表示のテキストボックスの内容を、その瞬間のタイムスタンプで記録する。
@@ -869,6 +940,7 @@
     var text = quickMemoTextEl.value.trim();
     var memo = { id: uid(), t: t, text: text, tags: [], createdAt: Date.now() };
     s.memos.push(memo);
+    state.draftText = '';
     save();
     quickMemoTextEl.value = '';
     renderHome();
@@ -914,9 +986,6 @@
     var sec = s ? currentElapsedSec(s) : 0;
     var sheetEl = document.getElementById('timerDisplay');
     if(sheetEl) sheetEl.textContent = formatElapsed(sec);
-    // 記録ボタン自体がタイムスタンプ表示を兼ねる(00:00:00形式で常時表示)
-    var recordBtnEl = document.getElementById('recordBtn');
-    if(recordBtnEl) recordBtnEl.textContent = formatElapsedHMS(sec);
   }
 
   function endActiveSession(){
@@ -939,6 +1008,7 @@
     var s = activeSession();
     document.getElementById('endSessionBtn').style.display = s ? '' : 'none';
     updateTimerDisplay();
+    renderTagSetList();
     renderTagManageList();
     document.getElementById('ytApiKeyRow').classList.add('hidden');
     document.getElementById('ytSearchResults').innerHTML = '';
@@ -947,11 +1017,62 @@
   }
   function closeSessionSheet(){ sessionSheet.classList.add('hidden'); }
 
-  // ---------- クイックタグ(プリセット)の管理 ----------
+  // ---------- ワードボタンのセット管理 ----------
+  // 複数のセットを登録しておき、「セット」ボタンで押した1つだけがメモ下のタグ帯に出る。
+  function renderTagSetList(){
+    var wrap = document.getElementById('tagSetList');
+    if(!wrap) return;
+    wrap.innerHTML = state.tagSets.map(function(set){
+      var active = set.id === state.activeTagSetId;
+      return '<div class="tag-set-row'+(active?' active':'')+'">' +
+        '<span class="tag-set-name">'+escapeHtml(set.name)+(active?' ✓':'')+'</span>' +
+        '<div class="tag-set-actions">' +
+          (active ? '' : '<button type="button" class="btn tag-set-apply" data-id="'+set.id+'">セット</button>') +
+          (state.tagSets.length>1 ? '<button type="button" class="tag-manage-del" data-setdel="'+set.id+'" aria-label="セットを削除">×</button>' : '') +
+        '</div></div>';
+    }).join('');
+    wrap.querySelectorAll('.tag-set-apply').forEach(function(btn){
+      btn.addEventListener('click', function(){
+        state.activeTagSetId = btn.dataset.id;
+        save();
+        renderTagSetList();
+        renderTagManageList();
+        if(currentView==='home') renderQuickTags(quickTagsWrap, insertTagTemplate);
+      });
+    });
+    wrap.querySelectorAll('[data-setdel]').forEach(function(btn){
+      btn.addEventListener('click', function(){
+        var idx = state.tagSets.findIndex(function(x){ return x.id===btn.dataset.setdel; });
+        if(idx<0) return;
+        if(!confirm('「'+state.tagSets[idx].name+'」を削除しますか？（中のタグも消えます）')) return;
+        var wasActive = state.tagSets[idx].id === state.activeTagSetId;
+        state.tagSets.splice(idx, 1);
+        if(wasActive) state.activeTagSetId = state.tagSets[0].id;
+        save();
+        renderTagSetList();
+        renderTagManageList();
+        if(currentView==='home') renderQuickTags(quickTagsWrap, insertTagTemplate);
+      });
+    });
+  }
+  document.getElementById('addTagSetBtn').addEventListener('click', function(){
+    var input = document.getElementById('newTagSetInput');
+    var name = input.value.trim();
+    if(!name) return;
+    state.tagSets.push({ id: uid(), name: name, tags: [] });
+    input.value = '';
+    save();
+    renderTagSetList();
+  });
+
+  // ---------- 選択中セットの中身(タグ)の管理 ----------
   function renderTagManageList(){
     var wrap = document.getElementById('tagManageList');
     if(!wrap) return;
-    wrap.innerHTML = state.tagPresets.map(function(t, i){
+    var set = activeTagSet();
+    var nameEl = document.getElementById('activeTagSetName');
+    if(nameEl) nameEl.textContent = set.name;
+    wrap.innerHTML = set.tags.map(function(t, i){
       return '<div class="tag-manage-row">' +
         '<span class="tag-manage-text">'+escapeHtml(t)+'</span>' +
         '<button type="button" class="tag-manage-del" data-idx="'+i+'" aria-label="削除">×</button>' +
@@ -960,7 +1081,7 @@
     wrap.querySelectorAll('.tag-manage-del').forEach(function(btn){
       btn.addEventListener('click', function(){
         var idx = parseInt(btn.dataset.idx, 10);
-        state.tagPresets.splice(idx, 1);
+        activeTagSet().tags.splice(idx, 1);
         save();
         renderTagManageList();
         if(currentView==='home') renderQuickTags(quickTagsWrap, insertTagTemplate);
@@ -971,7 +1092,8 @@
     var input = document.getElementById('newPresetTagInput');
     var t = input.value.trim();
     if(!t) return;
-    if(state.tagPresets.indexOf(t)===-1) state.tagPresets.push(t);
+    var set = activeTagSet();
+    if(set.tags.indexOf(t)===-1) set.tags.push(t);
     input.value = '';
     save();
     renderTagManageList();
@@ -1076,7 +1198,7 @@
   });
 
   function renderSheetTags(){
-    var allTags = state.tagPresets.slice();
+    var allTags = activeTagSet().tags.slice();
     Object.keys(editingTags).forEach(function(t){ if(allTags.indexOf(t)===-1) allTags.push(t); });
     sheetTagRow.innerHTML = allTags.map(function(t){
       var sel = editingTags[t] ? ' selected' : '';
@@ -1095,7 +1217,8 @@
   function addNewTagFromInput(){
     var t = newTagInput.value.trim();
     if(!t) return;
-    if(state.tagPresets.indexOf(t)===-1) state.tagPresets.push(t);
+    var set = activeTagSet();
+    if(set.tags.indexOf(t)===-1) set.tags.push(t);
     editingTags[t] = true;
     newTagInput.value = '';
     save();
