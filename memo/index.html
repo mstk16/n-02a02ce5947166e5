@@ -69,6 +69,8 @@
     padding:6px 8px; border-radius:8px; cursor:pointer;
   }
   .iconbtn:active{background:var(--panel2);}
+  .iconbtn.hidden{display:none;}
+  .topbar-icons{display:flex; align-items:center; gap:2px;}
 
   .view{flex:1 1 auto; overflow-y:auto; padding:14px 14px calc(140px + var(--safe-b));}
   .view.hidden{display:none;}
@@ -112,6 +114,10 @@
   .yt-status{font-size:12.5px; color:var(--accent); font-weight:700;}
   .yt-offset-row{display:flex; gap:6px;}
   .yt-offset-row .adjust{padding:6px 10px; font-size:12px;}
+  .yt-settings{margin-top:6px;}
+  .yt-settings.hidden{display:none;}
+  .yt-settings .yt-status{margin-bottom:8px;}
+  .yt-settings .yt-offset-row{margin-bottom:8px;}
 
   .quick-memo-card{margin-bottom:14px;}
   .quick-memo-card textarea{
@@ -201,6 +207,11 @@
     font-variant-numeric:tabular-nums; font-size:30px; font-weight:800; color:var(--accent);
     min-width:120px; text-align:center; cursor:pointer;
   }
+  .settings-elapsed{
+    font-variant-numeric:tabular-nums; font-size:26px; font-weight:800; color:var(--accent);
+    margin-bottom:14px;
+  }
+  .settings-end-row{margin-top:18px;}
   .adjust{
     border:1px solid var(--border); background:var(--panel2); color:var(--text);
     border-radius:10px; padding:8px 12px; font-size:13px; cursor:pointer;
@@ -244,7 +255,10 @@
 
   <header class="topbar">
     <div class="brand">📝 配信メモ</div>
-    <button class="iconbtn" id="helpBtn" aria-label="使い方">?</button>
+    <div class="topbar-icons">
+      <button class="iconbtn hidden" id="settingsBtn" aria-label="設定">⚙</button>
+      <button class="iconbtn" id="helpBtn" aria-label="使い方">?</button>
+    </div>
   </header>
 
   <!-- ホーム(記録)画面 -->
@@ -263,14 +277,6 @@
       <div class="yt-linked hidden" id="ytLinkedBox">
         <div class="yt-linked-row">
           <div class="yt-embed-wrap"><div id="ytPlayerHost"></div></div>
-          <div class="yt-linked-info">
-            <div class="yt-status" id="ytStatusText">読み込み中…</div>
-            <div class="yt-offset-row">
-              <button class="adjust" id="ytOffsetMinus">-5秒</button>
-              <button class="adjust" id="ytOffsetPlus">+5秒</button>
-            </div>
-            <button class="btn ghost" id="ytUnlinkBtn">連携解除</button>
-          </div>
         </div>
       </div>
     </div>
@@ -341,7 +347,8 @@
 <div class="sheet hidden" id="sessionSheet">
   <div class="sheet-backdrop"></div>
   <div class="sheet-panel">
-    <div class="sheet-title">配信の情報</div>
+    <div class="sheet-title">設定</div>
+    <div class="settings-elapsed" id="timerDisplay">00:00</div>
     <div class="field-label">タイトル</div>
     <input type="text" id="sessionTitleInput" placeholder="例：8/9 雑談配信">
     <div class="field-label">配信URL（任意）</div>
@@ -352,6 +359,20 @@
       <button class="btn" id="setNowBtn">今</button>
     </div>
     <div class="session-hint" style="margin-top:8px;">ここを入れた時刻が経過時間の0:00になります。あとから修正すると、すでに記録したメモの時間も自動でずれを補正します。</div>
+
+    <div class="yt-settings hidden" id="ytSettingsBox">
+      <div class="field-label">YouTube連携</div>
+      <div class="yt-status" id="ytStatusText">読み込み中…</div>
+      <div class="yt-offset-row">
+        <button class="adjust" id="ytOffsetMinus">-5秒</button>
+        <button class="adjust" id="ytOffsetPlus">+5秒</button>
+      </div>
+      <button class="btn ghost" id="ytUnlinkBtn">連携解除</button>
+    </div>
+
+    <div class="sheet-buttons settings-end-row">
+      <button class="btn danger" id="endSessionBtn" style="display:none;">配信を終了して保存</button>
+    </div>
     <div class="sheet-buttons">
       <button class="btn ghost" id="cancelSessionBtn">キャンセル</button>
       <button class="btn primary" id="saveSessionBtn">保存</button>
@@ -606,6 +627,7 @@
   document.getElementById('ytUnlinkBtn').addEventListener('click', function(){
     var s = activeSession();
     unlinkYouTube(s);
+    document.getElementById('ytSettingsBox').classList.add('hidden');
   });
   document.getElementById('ytOffsetMinus').addEventListener('click', function(){
     var s = activeSession();
@@ -711,7 +733,9 @@
 
   function renderHome(){
     var s = activeSession();
+    var settingsBtn = document.getElementById('settingsBtn');
     if(!s){
+      sessionCard.style.display = '';
       sessionCard.innerHTML =
         '<div class="session-title">配信は開始していません</div>' +
         '<div class="session-hint">下のタグや「⏱ この瞬間を記録」をタップすると、その瞬間から自動で配信が始まります。先にタイトルを決めたい場合は「配信情報を編集」から。</div>' +
@@ -719,25 +743,18 @@
           '<button class="btn" id="editSessionBtn">配信情報を編集して開始</button>' +
         '</div>';
       document.getElementById('editSessionBtn').addEventListener('click', function(){ openSessionSheet(true); });
+      settingsBtn.classList.add('hidden');
       renderQuickTags(quickTagsWrap, function(tagName){ quickLogMemo(tagName); });
       renderYtPanel(null);
       memoListLabel.textContent = '';
       memoListEl.innerHTML = '';
       return;
     }
-    sessionCard.innerHTML =
-      '<div class="session-title"></div>' +
-      '<div class="session-url"></div>' +
-      '<div class="timer" id="timerDisplay">00:00</div>' +
-      '<div class="session-actions">' +
-        '<button class="btn" id="editSessionBtn">タイトル/URLを編集</button>' +
-        '<button class="btn danger" id="endSessionBtn">配信を終了して保存</button>' +
-      '</div>';
-    sessionCard.querySelector('.session-title').textContent = s.title;
-    var urlEl = sessionCard.querySelector('.session-url');
-    if(s.url){ urlEl.textContent = s.url; } else { urlEl.textContent=''; }
-    document.getElementById('editSessionBtn').addEventListener('click', function(){ openSessionSheet(false); });
-    document.getElementById('endSessionBtn').addEventListener('click', endActiveSession);
+    // タイトル・経過時間・編集/終了ボタンは⚙設定シート側に移した。
+    // メモ入力に集中できるよう、ここには何も表示しない。
+    sessionCard.style.display = 'none';
+    sessionCard.innerHTML = '';
+    settingsBtn.classList.remove('hidden');
     updateTimerDisplay();
 
     renderQuickTags(quickTagsWrap, function(tagName){ quickLogMemo(tagName); });
@@ -832,14 +849,15 @@
 
   function endActiveSession(){
     var s = activeSession();
-    if(!s) return;
-    if(!confirm('配信を終了して履歴に保存します。よろしいですか？')) return;
+    if(!s) return false;
+    if(!confirm('配信を終了して履歴に保存します。よろしいですか？')) return false;
     s.endedAt = Date.now();
     state.activeSessionId = null;
     destroyYtPlayer();
     save();
     renderHome();
     showToast('配信メモを保存しました');
+    return true;
   }
 
   // ---------- 配信情報 編集シート ----------
@@ -855,10 +873,17 @@
     sessionTitleInput.value = s ? s.title : '';
     sessionUrlInput.value = s ? (s.url||'') : '';
     sessionStartTimeInput.value = s ? formatHM(s.startedAt) : '';
+    document.getElementById('endSessionBtn').style.display = s ? '' : 'none';
+    document.getElementById('ytSettingsBox').classList.toggle('hidden', !(s && s.ytVideoId));
+    updateTimerDisplay();
     sessionSheet.classList.remove('hidden');
     setTimeout(function(){ sessionTitleInput.focus(); }, 50);
   }
   function closeSessionSheet(){ sessionSheet.classList.add('hidden'); }
+  document.getElementById('settingsBtn').addEventListener('click', function(){ openSessionSheet(false); });
+  document.getElementById('endSessionBtn').addEventListener('click', function(){
+    if(endActiveSession()) closeSessionSheet();
+  });
   document.getElementById('cancelSessionBtn').addEventListener('click', closeSessionSheet);
   sessionSheet.querySelector('.sheet-backdrop').addEventListener('click', closeSessionSheet);
   document.getElementById('setNowBtn').addEventListener('click', function(){
@@ -1078,8 +1103,8 @@
       '【使い方】\n' +
       '・上のテキスト欄に配信を見ながら自由にメモを書いて、「⏱ この瞬間を記録」を押すと、その瞬間の時間とテキストがセットで記録され、欄は空になります(配信は自動で始まります)。\n' +
       '・タグをタップするだけで本文なしのメモを一瞬で残せます。あとでタップして本文を追記できます。\n' +
-      '・「タイトル/URLを編集」から配信開始時刻を指定すると、そこを0:00として経過時間を正確に計算します。あとから直しても過去のメモの時間は自動でずれを補正します。\n' +
-      '・「YouTube連携」に配信のURLを貼ると、配信の再生位置から経過時間を自動取得します（通信が必要・小さく動画が再生されます）。ズレを感じたら±5秒で微調整できます。\n' +
+      '・配信中は右上に⚙（設定）ボタンが出ます。タイトル/URL、配信開始時刻、配信の終了はここから。開始時刻を指定するとそこが0:00になり、あとから直しても過去のメモの時間は自動でずれを補正します。\n' +
+      '・「YouTube連携」に配信のURLを貼ると、配信の再生位置から経過時間を自動取得します（通信が必要・小さく動画が再生されます）。ズレを感じたら⚙設定の中の±5秒で微調整できます。\n' +
       '・画面が横長・正方形に近いくらい広いとき（分割画面など）は、左に動画とチャット、右にメモという2ペイン表示に自動で切り替わります。動画は音量ミュートで始まるので、必要ならプレーヤー上のボタンでミュート解除してください。\n' +
       '・「履歴」から過去の配信メモを見返したり、テキストとしてコピーできます。\n' +
       '・データはこの端末内だけに保存されます（他の端末とは同期しません）。'
