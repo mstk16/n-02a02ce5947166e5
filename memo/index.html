@@ -78,6 +78,21 @@
 
   .section-label{font-size:12px; color:var(--sub); margin:4px 2px 8px; font-weight:600;}
 
+  .yt-panel{margin-bottom:14px;}
+  .yt-unlinked.hidden, .yt-linked.hidden{display:none;}
+  .yt-linked{
+    background:var(--panel); border:1px solid var(--border); border-radius:14px; padding:10px;
+  }
+  .yt-linked-row{display:flex; gap:10px; align-items:stretch;}
+  .yt-embed-wrap{
+    width:128px; flex:0 0 auto; aspect-ratio:16/9; background:#000; border-radius:8px; overflow:hidden;
+  }
+  .yt-embed-wrap iframe, .yt-embed-wrap > div{width:100%; height:100%;}
+  .yt-linked-info{flex:1 1 auto; display:flex; flex-direction:column; gap:6px; justify-content:center;}
+  .yt-status{font-size:12.5px; color:var(--accent); font-weight:700;}
+  .yt-offset-row{display:flex; gap:6px;}
+  .yt-offset-row .adjust{padding:6px 10px; font-size:12px;}
+
   .quick-tags{display:flex; flex-wrap:wrap; gap:8px; margin-bottom:14px;}
   .chip{
     border:1px solid var(--border); background:var(--panel); color:var(--text);
@@ -196,6 +211,31 @@
   <!-- ホーム(記録)画面 -->
   <main class="view" id="homeView">
     <div class="session-card" id="sessionCard"></div>
+
+    <!-- YouTube連携パネル(renderHomeの再描画では触らない永続要素) -->
+    <div class="yt-panel">
+      <div class="yt-unlinked" id="ytUnlinkedBox">
+        <div class="field-label">YouTube連携（任意・経過時間を自動取得）</div>
+        <div class="add-tag-row">
+          <input type="text" id="ytUrlInput" placeholder="配信のYouTube URLを貼り付け">
+          <button class="btn" id="ytLinkBtn">連携</button>
+        </div>
+      </div>
+      <div class="yt-linked hidden" id="ytLinkedBox">
+        <div class="yt-linked-row">
+          <div class="yt-embed-wrap"><div id="ytPlayerHost"></div></div>
+          <div class="yt-linked-info">
+            <div class="yt-status" id="ytStatusText">読み込み中…</div>
+            <div class="yt-offset-row">
+              <button class="adjust" id="ytOffsetMinus">-5秒</button>
+              <button class="adjust" id="ytOffsetPlus">+5秒</button>
+            </div>
+            <button class="btn ghost" id="ytUnlinkBtn">連携解除</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <div id="quickTagsWrap"></div>
     <div class="section-label" id="memoListLabel"></div>
     <div class="memo-list" id="memoList"></div>
@@ -339,9 +379,170 @@
 
   function currentElapsedSec(session){
     if(!session) return 0;
+    if(session.ytVideoId && ytPlayer && ytPlayerSessionId===session.id && ytElapsedSec!==null){
+      return Math.max(0, ytElapsedSec + (session.ytOffsetSec||0));
+    }
     var end = session.endedAt || Date.now();
     return Math.floor((end - session.startedAt)/1000);
   }
+
+  // ---------- YouTube連携(任意: 経過時間の自動取得) ----------
+  var ytApiState = 'idle'; // idle | loading | ready | error
+  var ytApiReadyCallbacks = [];
+  var ytPlayer = null;
+  var ytPlayerSessionId = null;
+  var ytElapsedSec = null;
+  var ytPollInterval = null;
+
+  function extractYouTubeId(input){
+    input = String(input||'').trim();
+    if(/^[a-zA-Z0-9_-]{11}$/.test(input)) return input;
+    var m = input.match(/(?:youtube\.com\/(?:watch\?v=|live\/|shorts\/|embed\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})/);
+    return m ? m[1] : null;
+  }
+
+  function loadYouTubeApi(onReady, onFail){
+    if(ytApiState==='ready' && window.YT && window.YT.Player){ onReady(); return; }
+    ytApiReadyCallbacks.push({ ok: onReady, fail: onFail });
+    if(ytApiState==='loading') return;
+    ytApiState = 'loading';
+    var settled = false;
+    function settleFail(msg){
+      if(settled) return;
+      settled = true;
+      ytApiState = 'idle'; // 再試行できるよう状態は戻しておく
+      if(msg) showToast(msg);
+      var waiters = ytApiReadyCallbacks; ytApiReadyCallbacks = [];
+      waiters.forEach(function(w){ if(w.fail) w.fail(); });
+    }
+    var prevReady = window.onYouTubeIframeAPIReady;
+    window.onYouTubeIframeAPIReady = function(){
+      if(settled) return;
+      settled = true;
+      ytApiState = 'ready';
+      if(typeof prevReady === 'function') prevReady();
+      var waiters = ytApiReadyCallbacks; ytApiReadyCallbacks = [];
+      waiters.forEach(function(w){ w.ok(); });
+    };
+    var tag = document.createElement('script');
+    tag.src = 'https://www.youtube.com/iframe_api';
+    tag.onerror = function(){ settleFail('YouTube APIの読み込みに失敗しました（通信環境をご確認ください）'); };
+    document.head.appendChild(tag);
+    setTimeout(function(){ settleFail('YouTubeの読み込みがタイムアウトしました。手動モードに戻ります'); }, 12000);
+  }
+
+  function destroyYtPlayer(){
+    if(ytPollInterval){ clearInterval(ytPollInterval); ytPollInterval=null; }
+    if(ytPlayer && ytPlayer.destroy){ try{ ytPlayer.destroy(); }catch(e){} }
+    ytPlayer = null; ytPlayerSessionId = null; ytElapsedSec = null;
+  }
+
+  function setYtStatus(text){
+    var el = document.getElementById('ytStatusText');
+    if(el) el.textContent = text;
+  }
+
+  function pollYtTime(){
+    if(!ytPlayer || typeof ytPlayer.getCurrentTime !== 'function') return;
+    try{
+      var t = ytPlayer.getCurrentTime();
+      if(typeof t === 'number' && isFinite(t) && t >= 0){
+        ytElapsedSec = Math.floor(t);
+        setYtStatus('YouTubeから自動取得中');
+        if(currentView==='home') updateTimerDisplay();
+      }
+    }catch(e){}
+  }
+
+  function createYtPlayer(session){
+    if(!session || !session.ytVideoId) return;
+    if(ytPlayer && ytPlayerSessionId===session.id) return; // 既に接続済み
+    destroyYtPlayer();
+    var host = document.getElementById('ytPlayerHost');
+    if(!host) return;
+    host.innerHTML = '';
+    var inner = document.createElement('div');
+    host.appendChild(inner);
+    setYtStatus('読み込み中…');
+    try{
+      ytPlayer = new YT.Player(inner, {
+        videoId: session.ytVideoId,
+        playerVars: { autoplay: 1, mute: 1, playsinline: 1, controls: 1, rel: 0 },
+        events: {
+          onReady: function(){
+            ytPlayerSessionId = session.id;
+            if(ytPollInterval) clearInterval(ytPollInterval);
+            ytPollInterval = setInterval(pollYtTime, 1000);
+            pollYtTime();
+          },
+          onError: function(){
+            showToast('この動画は連携できませんでした。手動モードに戻ります');
+            unlinkYouTube(session);
+          }
+        }
+      });
+    }catch(err){
+      showToast('YouTube連携でエラーが発生しました');
+      unlinkYouTube(session);
+    }
+  }
+
+  function linkYouTube(session, videoId){
+    destroyYtPlayer();
+    session.ytVideoId = videoId;
+    session.ytOffsetSec = session.ytOffsetSec || 0;
+    save();
+    renderYtPanel(session);
+  }
+
+  function unlinkYouTube(session){
+    destroyYtPlayer();
+    if(session){ session.ytVideoId = null; save(); }
+    renderYtPanel(session);
+  }
+
+  function renderYtPanel(session){
+    var linkedBox = document.getElementById('ytLinkedBox');
+    var unlinkedBox = document.getElementById('ytUnlinkedBox');
+    if(!linkedBox || !unlinkedBox) return;
+    if(session && session.ytVideoId){
+      linkedBox.classList.remove('hidden');
+      unlinkedBox.classList.add('hidden');
+      if(!ytPlayer || ytPlayerSessionId!==session.id){
+        setYtStatus('読み込み中…');
+        loadYouTubeApi(function(){ createYtPlayer(session); }, function(){ unlinkYouTube(session); });
+      }
+    } else {
+      linkedBox.classList.add('hidden');
+      unlinkedBox.classList.remove('hidden');
+    }
+  }
+
+  document.getElementById('ytLinkBtn').addEventListener('click', function(){
+    var raw = document.getElementById('ytUrlInput').value;
+    var id = extractYouTubeId(raw);
+    if(!id){ showToast('YouTubeのURLを確認してください'); return; }
+    var s = ensureActiveSession();
+    linkYouTube(s, id);
+    document.getElementById('ytUrlInput').value = '';
+    if(currentView==='home') renderHome();
+  });
+  document.getElementById('ytUnlinkBtn').addEventListener('click', function(){
+    var s = activeSession();
+    unlinkYouTube(s);
+  });
+  document.getElementById('ytOffsetMinus').addEventListener('click', function(){
+    var s = activeSession();
+    if(!s) return;
+    s.ytOffsetSec = (s.ytOffsetSec||0) - 5;
+    save();
+  });
+  document.getElementById('ytOffsetPlus').addEventListener('click', function(){
+    var s = activeSession();
+    if(!s) return;
+    s.ytOffsetSec = (s.ytOffsetSec||0) + 5;
+    save();
+  });
 
   // ---------- Toast ----------
   var toastEl = document.getElementById('toast');
@@ -419,6 +620,7 @@
         '</div>';
       document.getElementById('editSessionBtn').addEventListener('click', function(){ openSessionSheet(true); });
       renderQuickTags(quickTagsWrap, function(tagName){ quickLogMemo(tagName); });
+      renderYtPanel(null);
       memoListLabel.textContent = '';
       memoListEl.innerHTML = '';
       return;
@@ -439,6 +641,7 @@
     updateTimerDisplay();
 
     renderQuickTags(quickTagsWrap, function(tagName){ quickLogMemo(tagName); });
+    renderYtPanel(s);
 
     memoListLabel.textContent = 'メモ（' + s.memos.length + '件）';
     renderMemoItems(memoListEl, s.memos, function(memo){ openMemoSheet(memo.id); });
@@ -512,6 +715,7 @@
     if(!confirm('配信を終了して履歴に保存します。よろしいですか？')) return;
     s.endedAt = Date.now();
     state.activeSessionId = null;
+    destroyYtPlayer();
     save();
     renderHome();
     showToast('配信メモを保存しました');
@@ -754,6 +958,7 @@
       '・「＋ メモを記録」または上部のタグをタップすると、配信が自動で始まりその瞬間の時間が記録されます。\n' +
       '・タグをタップするだけで本文なしのメモを一瞬で残せます。あとでタップして本文を追記できます。\n' +
       '・「タイトル/URLを編集」から配信開始時刻を指定すると、そこを0:00として経過時間を正確に計算します。あとから直しても過去のメモの時間は自動でずれを補正します。\n' +
+      '・「YouTube連携」に配信のURLを貼ると、配信の再生位置から経過時間を自動取得します（通信が必要・小さく動画が再生されます）。ズレを感じたら±5秒で微調整できます。\n' +
       '・「履歴」から過去の配信メモを見返したり、テキストとしてコピーできます。\n' +
       '・データはこの端末内だけに保存されます（他の端末とは同期しません）。'
     );
