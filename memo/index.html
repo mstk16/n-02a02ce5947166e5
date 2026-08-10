@@ -23,7 +23,10 @@
     --accent:#1d9bf0;
     --accent-dim:#144a70;
     --danger:#f4405a;
-    --safe-b: env(safe-area-inset-bottom, 0px);
+    /* env(safe-area-inset-bottom)はWebView内だと実機のジェスチャーナビ等を
+       正確に反映しないコトがあるため、常に少し余分に足しておく(削れるより
+       余白が少し多い方がマシ・Z Fold実機で下端が隠れる不具合の対策) */
+    --safe-b: calc(env(safe-area-inset-bottom, 0px) + 16px);
     --safe-t: env(safe-area-inset-top, 0px);
   }
   *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
