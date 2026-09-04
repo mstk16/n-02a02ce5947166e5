@@ -1145,14 +1145,19 @@
     var s = activeSession();
     if(!s) return false;
     if(!confirm('配信を終了して履歴に保存します。よろしいですか？')) return false;
+    endActiveSessionCore(s);
+    renderHome();
+    showToast('配信メモを保存しました');
+    return true;
+  }
+  // 確認ダイアログ無しの版。共有起動時など、確認を挟まず自動でセッションを
+  // 閉じたい場面向け(履歴には残るのでデータは消えない)。
+  function endActiveSessionCore(s){
     if(typeof closeOpenMemo==='function') closeOpenMemo(true);
     s.endedAt = Date.now();
     state.activeSessionId = null;
     destroyYtPlayer();
     save();
-    renderHome();
-    showToast('配信メモを保存しました');
-    return true;
   }
 
   // ---------- 設定シート ----------
@@ -1541,9 +1546,19 @@
     try{
       var id = extractYouTubeId(new URLSearchParams(location.search).get('yt'));
       if(!id) return;
+      var cur = activeSession();
+      var switching = !!(cur && cur.ytVideoId !== id);
+      if(switching){
+        // 別配信の動画を共有したのに、それ以前の(別配信の)メモが残ったままの
+        // セッションへ動画だけ差し替えて紐付けると、違う配信のメモに今回の
+        // 動画が混ざって記録されてしまう(2026-09-04発覚)。共有=「この配信の
+        // メモを新しく始めたい」という明確な意思表示とみなし、今のセッションは
+        // ここで閉じて(履歴として残る・データは消えない)、新しいセッションを始める。
+        endActiveSessionCore(cur);
+      }
       var s = ensureActiveSession();
       linkYouTube(s, id);
-      showToast('共有された動画と連携しました');
+      showToast(switching ? '新しい配信メモを始めました' : '共有された動画と連携しました');
       history.replaceState(null, '', location.pathname); // 再読み込み時に再実行しないようクエリを消す
     }catch(e){}
   })();
