@@ -42,8 +42,14 @@
   #videoPane{display:none;}
 
   /* 横長/正方形に近い広い画面(分割画面の片側など)ではシアターモードにする:
-     動画+チャットを左、アプリ本体を右の2ペインにする */
-  @media (min-width:700px){
+     動画+チャットを左、アプリ本体を右の2ペインにする。
+     ⚠1000px: Z Fold 7を全開(分割画面ではない通常利用)にしたときのCSS viewport幅は
+     約984pxで、閾値が700pxのままだと全開の普通利用でもシアターモードが発動し、
+     メモ欄が右ペイン約46%幅に押し込まれて狭くなっていた(2026-09-04発覚)。
+     実際の分割画面(2アプリ横並び)の片側幅はこれよりずっと狭くなるため、
+     984pxを確実に上回る1000pxに調整して誤発動を防ぐ(900pxでは984pxより低く
+     まだ発動してしまうミスを一度やった=境界値は必ず実測値と比較して確認するコト)。 */
+  @media (min-width:1000px){
     #root{display:grid; grid-template-columns:1.15fr 1fr; height:100dvh;}
     #videoPane{
       display:flex; flex-direction:column; height:100dvh; min-width:0;
@@ -273,7 +279,7 @@
 
   /* シアターモードでは#appが右ペインだけになるので、fixed系のUIも
      画面全体ではなく#app基準(position:relative)に収める */
-  @media (min-width:700px){
+  @media (min-width:1000px){
     .action-bar, .tag-bar, .toast{position:absolute;}
     .action-bar{max-width:none;}
   }
@@ -600,7 +606,7 @@
   }
 
   // 横長/正方形に近い広い画面では「シアターモード」(動画+チャットを大きく表示)に切り替える。
-  var ytTheaterQuery = window.matchMedia('(min-width: 700px)');
+  var ytTheaterQuery = window.matchMedia('(min-width: 1000px)'); // CSS側の@mediaと必ず同じ値にする
   function isTheaterMode(){ return ytTheaterQuery.matches; }
   ytTheaterQuery.addEventListener('change', function(){
     var s = activeSession();
@@ -1015,11 +1021,27 @@
       return;
     }
     memoListLabel.textContent = 'メモ（' + s.memos.length + '件）';
-    renderMemoItems(memoListEl, s.memos, function(memo){ openMemoSheet(memo.id); });
+    renderMemoItems(memoListEl, s.memos, function(memo){
+      if(memo.id === openMemoId){
+        // 記録中の自分の行をタップした場合、無警告で編集シートに切り替わると
+        // 「記録が急に終わった」ように見えて驚かせる。テキストエリアに戻すだけにする。
+        views.home.scrollTop = 0;
+        quickMemoTextEl.focus();
+        return;
+      }
+      openMemoSheet(memo.id);
+    });
     updateRecordingIndicator();
     // 実際にスクロールするのはmemoListElの親である.view(homeView)側。
-    // 新しく記録したメモが下帯に隠れず見えるよう、一番下までスクロールしておく。
-    views.home.scrollTop = views.home.scrollHeight;
+    if(openMemoId){
+      // 記録中(🕐を空欄で押した直後)はテキストエリアがこの画面の先頭にあるので、
+      // そこへ書き続けられるよう先頭を表示する。一番下までスクロールすると、
+      // 肝心のテキストエリアがメモ一覧の下に押し出されて見えなくなってしまう。
+      views.home.scrollTop = 0;
+    } else {
+      // 通常時: 新しく記録したメモが下帯に隠れず見えるよう、一番下までスクロールしておく。
+      views.home.scrollTop = views.home.scrollHeight;
+    }
   }
 
   function renderQuickTags(container, onTap){
@@ -1042,7 +1064,11 @@
     el.value = el.value.slice(0, start) + tagName + el.value.slice(end);
     var cursorPos = (tagName === '◆◇') ? start + 1 : start + tagName.length;
     el.setSelectionRange(cursorPos, cursorPos);
-    saveDraft(); // .valueへの直接代入はinputイベントが飛ばないので明示的に保存する
+    // .valueへの直接代入はinputイベントが飛ばないため、明示的にinputを発火させて
+    // テキストエリアのinputリスナー(記録中openMemoIdならそのメモへ・それ以外は下書きへ)に
+    // 一本化する。ここで直接saveDraft()を呼ぶと、記録中に挿入したタグが
+    // 実際のメモ(s.memos)へ保存されずに消えるバグになる(2026-09-04発覚)。
+    el.dispatchEvent(new Event('input', {bubbles:true}));
   }
 
   // 常時表示のテキストボックスの内容を、その瞬間のタイムスタンプで記録する。
