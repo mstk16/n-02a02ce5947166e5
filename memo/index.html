@@ -43,13 +43,12 @@
 
   /* 横長/正方形に近い広い画面(分割画面の片側など)ではシアターモードにする:
      動画+チャットを左、アプリ本体を右の2ペインにする。
-     ⚠1000px: Z Fold 7を全開(分割画面ではない通常利用)にしたときのCSS viewport幅は
-     約984pxで、閾値が700pxのままだと全開の普通利用でもシアターモードが発動し、
-     メモ欄が右ペイン約46%幅に押し込まれて狭くなっていた(2026-09-04発覚)。
-     実際の分割画面(2アプリ横並び)の片側幅はこれよりずっと狭くなるため、
-     984pxを確実に上回る1000pxに調整して誤発動を防ぐ(900pxでは984pxより低く
-     まだ発動してしまうミスを一度やった=境界値は必ず実測値と比較して確認するコト)。 */
-  @media (min-width:1000px){
+     ⚠2026-09-04: 一時700px→1000pxに変更したが、Z Fold 7全開(≈984px)でこそ
+     動画を大きく見る2ペイン表示を実際に使っていた(ユーザー実機確認)ため、
+     ユーザーに未確認のままエージェントの推測(「メモ欄が狭くなる」)だけで
+     動かしたのは誤りだった。700pxへ戻す。閾値を変える場合は
+     必ず実際の使い方をユーザーに確認してから変えること。 */
+  @media (min-width:700px){
     #root{display:grid; grid-template-columns:1.15fr 1fr; height:100dvh;}
     #videoPane{
       display:flex; flex-direction:column; height:100dvh; min-width:0;
@@ -279,7 +278,7 @@
 
   /* シアターモードでは#appが右ペインだけになるので、fixed系のUIも
      画面全体ではなく#app基準(position:relative)に収める */
-  @media (min-width:1000px){
+  @media (min-width:700px){
     .action-bar, .tag-bar, .toast{position:absolute;}
     .action-bar{max-width:none;}
   }
@@ -606,7 +605,7 @@
   }
 
   // 横長/正方形に近い広い画面では「シアターモード」(動画+チャットを大きく表示)に切り替える。
-  var ytTheaterQuery = window.matchMedia('(min-width: 1000px)'); // CSS側の@mediaと必ず同じ値にする
+  var ytTheaterQuery = window.matchMedia('(min-width: 700px)'); // CSS側の@mediaと必ず同じ値にする
   function isTheaterMode(){ return ytTheaterQuery.matches; }
   ytTheaterQuery.addEventListener('change', function(){
     var s = activeSession();
