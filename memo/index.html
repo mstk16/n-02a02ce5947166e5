@@ -680,6 +680,22 @@
     renderYtPanel(session);
   }
 
+  // 動画を連携する共通経路。今のセッションに既に「別の」動画が(または動画無しで
+  // メモだけ)紐づいている場合、そのまま今のセッションへ上書き連携すると別配信の
+  // メモに今回の動画が混ざってしまう。動画の連携=「この配信のメモを始めたい」
+  // という意思表示とみなし、今のセッションは閉じて(履歴に残る・データは消えない)
+  // 新しいセッションで連携し直す。
+  // ⚠共有起動・URL貼り付け・検索して選ぶ、の3つの連携経路すべてでコレを通すコト
+  // (2026-09-04、共有経路だけ直して残り2経路を直し忘れる抜けが実際にあった)。
+  function linkYouTubeAsSession(id){
+    var cur = activeSession();
+    var switching = !!(cur && cur.ytVideoId !== id);
+    if(switching) endActiveSessionCore(cur);
+    var s = ensureActiveSession();
+    linkYouTube(s, id);
+    return switching;
+  }
+
   function renderYtPanel(session){
     var floatBadge = document.getElementById('ytFloatBadge');
     if(!floatBadge) return;
@@ -726,8 +742,8 @@
     var raw = document.getElementById('ytUrlInput').value;
     var id = extractYouTubeId(raw);
     if(!id){ showToast('YouTubeのURLを確認してください'); return; }
-    var s = ensureActiveSession();
-    linkYouTube(s, id);
+    var switching = linkYouTubeAsSession(id);
+    if(switching) showToast('新しい配信メモを始めました');
     document.getElementById('ytUrlInput').value = '';
     if(currentView==='home') renderHome();
   });
@@ -802,8 +818,8 @@
       el.addEventListener('click', function(){
         var vid = el.dataset.vid;
         if(!vid) return;
-        var s = ensureActiveSession();
-        linkYouTube(s, vid);
+        var switching = linkYouTubeAsSession(vid);
+        if(switching) showToast('新しい配信メモを始めました');
         wrap.innerHTML = '';
         document.getElementById('ytSearchInput').value = '';
         if(currentView==='home') renderHome();
@@ -1545,18 +1561,7 @@
     try{
       var id = extractYouTubeId(new URLSearchParams(location.search).get('yt'));
       if(!id) return;
-      var cur = activeSession();
-      var switching = !!(cur && cur.ytVideoId !== id);
-      if(switching){
-        // 別配信の動画を共有したのに、それ以前の(別配信の)メモが残ったままの
-        // セッションへ動画だけ差し替えて紐付けると、違う配信のメモに今回の
-        // 動画が混ざって記録されてしまう(2026-09-04発覚)。共有=「この配信の
-        // メモを新しく始めたい」という明確な意思表示とみなし、今のセッションは
-        // ここで閉じて(履歴として残る・データは消えない)、新しいセッションを始める。
-        endActiveSessionCore(cur);
-      }
-      var s = ensureActiveSession();
-      linkYouTube(s, id);
+      var switching = linkYouTubeAsSession(id);
       showToast(switching ? '新しい配信メモを始めました' : '共有された動画と連携しました');
       history.replaceState(null, '', location.pathname); // 再読み込み時に再実行しないようクエリを消す
     }catch(e){}
