@@ -978,7 +978,11 @@
     save();
     quickMemoTextEl.value = '';
     renderHome();
+    // Android WebViewは、別要素(🕐ボタン)のタップ由来の同期focus()だけだと
+    // ソフトキーボードを出さないコトがある(仕様上ユーザー操作と信用しきれない)。
+    // 即時focus+一呼吸おいての再focusの二段構えにする(openMemoSheetの既存手口と同じ対策)。
     quickMemoTextEl.focus();
+    setTimeout(function(){ quickMemoTextEl.focus(); }, 80);
   }
 
   function ensureActiveSession(){
