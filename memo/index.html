@@ -460,6 +460,22 @@
     s.activeTagSetId = 'default';
     delete s.tagPresets;
   }
+  // 旧バージョン(メモがmemos配列の構造化データだった頃)の「進行中セッション」だけを
+  // 新形式(noteText=連続テキスト)へ移行する。終了済みの履歴セッションはmemos配列の
+  // まま残し、詳細画面は従来どおりそちらを表示する(互換維持)。
+  // ⚠2026-09-05: コレを入れる前に新形式へ更新すると、進行中セッションの中身が
+  // 新UI(noteText前提)では空欄に見えてしまい「メモが消えた」という実害が実際に
+  // 起きた(データ自体はmemos配列にまだ残っていて削除はされていなかった)。
+  function migrateActiveSessionToNoteText(s){
+    if(!s || s.noteText !== undefined) return false;
+    var lines = (s.memos || []).slice().sort(function(a,b){ return a.t-b.t; }).map(function(m){
+      var tagStr = m.tags && m.tags.length ? ' ['+m.tags.join(' ')+']' : '';
+      return formatElapsed(m.t) + ' ' + (m.text||'') + tagStr;
+    });
+    s.noteText = lines.join('\n');
+    delete s.memos;
+    return true;
+  }
   function loadState(){
     try{
       var raw = localStorage.getItem(STORAGE_KEY);
@@ -468,6 +484,10 @@
       if(!s.sessions) throw 0;
       var migrated = !s.tagSets || !s.tagSets.length;
       migrateTagSets(s);
+      if(s.activeSessionId){
+        var active = s.sessions.find(function(x){ return x.id===s.activeSessionId; });
+        if(migrateActiveSessionToNoteText(active)) migrated = true;
+      }
       if(migrated) localStorage.setItem(STORAGE_KEY, JSON.stringify(s)); // 移行結果をその場で書き戻す
       return s;
     }catch(e){
@@ -594,15 +614,27 @@
       if(ytPlayerMode===mode) return; // 既に接続済み・変更なし
       // 同じ動画のまま折りたたみ⇄展開でモードだけ変わった場合、プレーヤーを
       // 壊して作り直すと毎回ミュート状態に戻ってしまう(2026-09-05実機報告)。
-      // 再生中の動画・ミュート解除状態・再生位置を保ったまま、iframeそのものを
-      // 新しい表示先へ移動するだけにする(YouTube IFrame APIのプレーヤーは
-      // DOM移動しても再読み込みされない)。
+      // ⚠appendChildでのDOM移動は「既存ノードでもブラウジングコンテキストが
+      // アンロードされ中身がリロードされる」というブラウザ共通の仕様(WHATWG
+      // issue #5484)で、これが原因で前回の対策(移動するだけ)は効いていなかった。
+      // Chromeがこの問題を解決するために新設したNode.moveBefore()(リロードを
+      // 起こさない移動専用API・WebView 133+で利用可)を使う。無い端末向けの
+      // 保険として、フォールバック経路だけミュート状態を退避→復元する。
       var newHostId = mode==='theater' ? 'ytPlayerHostBig' : 'ytPlayerHost';
       var newHost = document.getElementById(newHostId);
       var iframeEl = ytPlayer.getIframe ? ytPlayer.getIframe() : null;
       if(newHost && iframeEl){
-        newHost.innerHTML = '';
-        newHost.appendChild(iframeEl);
+        if(typeof newHost.moveBefore === 'function'){
+          newHost.innerHTML = '';
+          newHost.moveBefore(iframeEl, null);
+        } else {
+          var wasMuted = (ytPlayer.isMuted && ytPlayer.isMuted());
+          newHost.innerHTML = '';
+          newHost.appendChild(iframeEl); // リロードされる可能性がある(古いWebView向けの保険経路)
+          if(!wasMuted && ytPlayer.unMute){
+            setTimeout(function(){ try{ ytPlayer.unMute(); }catch(e){} }, 300);
+          }
+        }
       }
       ytPlayerMode = mode;
       return;
