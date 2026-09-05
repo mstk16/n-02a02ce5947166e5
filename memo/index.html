@@ -928,6 +928,8 @@
     renderQuickTags(quickTagsWrap, insertTagTemplate);
     renderYtPanel(s);
     quickMemoTextEl.value = s ? (s.noteText || '') : '';
+    // 開いたときも常に一番下(最新の内容)が見えるようにする
+    quickMemoTextEl.scrollTop = quickMemoTextEl.scrollHeight;
   }
 
   function renderQuickTags(container, onTap){
@@ -965,13 +967,19 @@
   // モーダルも一覧遷移も無く、押した瞬間からそのまま続けて書ける。
   // 既に何か書きかけの行の途中なら、時刻の前に改行を1つ入れて新しい行から始める
   // (欄が空、または既に行頭にいる場合は改行を足さない)。
+  // 🕐は今のカーソル位置に関わらず、常に一番下に追記する(ユーザー指示: 自分で
+  // スクロールしなくていいように)。カーソル位置に挿入すると、途中を見返して
+  // いた場合そこに時刻が混ざってしまい、しかも一番下が見えないままになる。
   function stampQuickMemo(){
     var s = ensureActiveSession();
     var t = currentElapsedSec(s);
     var el = quickMemoTextEl;
-    var start = el.selectionStart != null ? el.selectionStart : el.value.length;
-    var needsNewline = start > 0 && el.value.charAt(start-1) !== '\n';
-    insertAtCursor((needsNewline ? '\n' : '') + formatElapsed(t) + ' ');
+    var needsNewline = el.value.length > 0 && el.value.charAt(el.value.length-1) !== '\n';
+    el.value += (needsNewline ? '\n' : '') + formatElapsed(t) + ' ';
+    el.focus();
+    el.setSelectionRange(el.value.length, el.value.length);
+    el.scrollTop = el.scrollHeight;
+    el.dispatchEvent(new Event('input', {bubbles:true}));
   }
 
   function renderMemoItems(container, memos, onTap){
