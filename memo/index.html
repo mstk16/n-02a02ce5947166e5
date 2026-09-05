@@ -117,7 +117,10 @@
      リスクがあるため、display:noneではなく画面外に置かない形を選んでいる)。 */
   .yt-float{
     position:fixed; top:var(--safe-t); right:var(--safe-r); z-index:8;
-    width:56px; aspect-ratio:16/9; border-radius:8px; overflow:hidden;
+    /* 折りたたみ時(コンパクト表示)はコレが唯一の映像。56pxだと存在確認用の
+       バッジにしかならず「見えない」ため、実際に視聴できる大きさに広げる
+       (2026-09-05実機報告)。40vw基準・上限240pxで、メモ欄の書く余白は残す */
+    width:min(40vw, 240px); aspect-ratio:16/9; border-radius:8px; overflow:hidden;
     background:#000; box-shadow:0 2px 10px rgba(0,0,0,.5); cursor:pointer;
     border:1px solid var(--border);
   }
@@ -131,29 +134,15 @@
   .yt-settings .yt-status{margin-bottom:8px;}
   .yt-settings .yt-offset-row{margin-bottom:8px;}
 
-  /* 画面のほぼ全部をメモ欄にする。#homeViewがflex-columnなので、このカードが
-     flex:1で余った縦幅を全部吸って、メモ一覧は自然な高さだけ使う */
+  /* 画面全部をメモ欄にする(1配信=1つの連続テキスト。一覧・個別カードは無い)。
+     #homeViewがflex-columnなので、このカードがflex:1で縦幅を全部吸う */
   #homeView{flex:1 1 auto; min-height:0;}
-  .quick-memo-card{flex:1 1 auto; display:flex; flex-direction:column; margin-bottom:14px; min-height:0;}
+  .quick-memo-card{flex:1 1 auto; display:flex; flex-direction:column; min-height:0;}
   .quick-memo-card textarea{
-    flex:1 1 auto; width:100%; min-height:45vh; background:var(--panel); border:1px solid var(--border); color:var(--text);
-    border-radius:14px; padding:14px; font-size:16px; line-height:1.6; font-family:inherit; resize:vertical;
+    flex:1 1 auto; width:100%; height:100%; background:var(--panel); border:1px solid var(--border); color:var(--text);
+    border-radius:14px; padding:14px; font-size:16px; line-height:1.6; font-family:inherit; resize:none;
   }
   .quick-memo-card textarea:focus{outline:2px solid var(--accent); outline-offset:0;}
-  /* 🕐を空欄で押した直後、その場で書き続けられるコトを示す常時見えるサイン。
-     別画面へ移動していない・このテキストエリアがそのメモに直結してるコトを伝える */
-  .recording-indicator{
-    display:flex; align-items:center; gap:6px; font-size:12.5px; color:var(--accent); font-weight:700;
-    margin-bottom:6px; flex:0 0 auto;
-  }
-  .recording-indicator.hidden{display:none;}
-  .recording-indicator .dot{
-    width:7px; height:7px; border-radius:50%; background:var(--accent); flex:0 0 auto;
-    animation:recdot 1.4s ease-in-out infinite;
-  }
-  @keyframes recdot{ 0%,100%{opacity:1;} 50%{opacity:.35;} }
-
-  #memoList, #memoListLabel{flex:0 0 auto;}
 
   .chip{
     border:1px solid var(--border); background:var(--panel); color:var(--text);
@@ -229,6 +218,10 @@
 
   .detail-header{margin-bottom:14px;}
   .detail-actions{display:flex; gap:8px; margin-top:12px; flex-wrap:wrap;}
+  .detail-note-text{
+    white-space:pre-wrap; word-break:break-word; font-size:14.5px; line-height:1.7;
+    background:var(--panel); border:1px solid var(--border); border-radius:12px; padding:14px; margin-top:14px;
+  }
 
   /* シート(モーダル) */
   .sheet{position:fixed; inset:0; z-index:50; display:flex; align-items:flex-end; justify-content:center;}
@@ -336,14 +329,12 @@
   <!-- リンク中の動画プレビュー(右上に小さく浮かせるだけ。再生を止めないよう常にDOM上に存在させる) -->
   <div class="yt-float hidden" id="ytFloatBadge"><div id="ytPlayerHost"></div></div>
 
-  <!-- ホーム(記録)画面。上から下までほぼメモ欄だけにする -->
+  <!-- ホーム(記録)画面。1配信=1つの連続テキスト。🕐は今のカーソル位置に
+       時刻を挿入するだけ(タグ挿入と同じ仕組み)。一覧・個別カードは持たない。 -->
   <main class="view" id="homeView">
     <div class="quick-memo-card">
-      <div class="recording-indicator hidden" id="recordingIndicator"><span class="dot"></span><span id="recordingIndicatorText"></span></div>
-      <textarea id="quickMemoText" placeholder="ここにメモを書きながら見て、下のタグでテキスト挿入・右下のタイムスタンプで記録"></textarea>
+      <textarea id="quickMemoText" placeholder="ここに自由に書きながら見て、下のタグでテキスト挿入・右下のタイムスタンプで今の時刻を挿入"></textarea>
     </div>
-    <div class="section-label" id="memoListLabel"></div>
-    <div class="memo-list" id="memoList"></div>
   </main>
 
   <!-- 履歴画面 -->
@@ -378,31 +369,6 @@
   </div>
 </div>
 </div><!-- /#root -->
-
-<!-- メモ入力/編集シート -->
-<div class="sheet hidden" id="memoSheet">
-  <div class="sheet-backdrop"></div>
-  <div class="sheet-panel">
-    <div class="sheet-title" id="memoSheetTitle">メモを記録</div>
-    <div class="sheet-time">
-      <button class="adjust" id="timeMinus">-10秒</button>
-      <div class="t" id="sheetTime">00:00</div>
-      <button class="adjust" id="timePlus">+10秒</button>
-    </div>
-    <textarea id="memoText" rows="3" placeholder="どうした？（空欄でもOK・タグだけでも記録できます）"></textarea>
-    <div class="field-label">タグ</div>
-    <div class="tag-row" id="sheetTagRow"></div>
-    <div class="add-tag-row">
-      <input type="text" id="newTagInput" placeholder="新しいタグを追加">
-      <button class="btn" id="addTagBtn">追加</button>
-    </div>
-    <div class="sheet-buttons">
-      <button class="btn" id="deleteMemoBtn" style="display:none;">削除</button>
-      <button class="btn ghost" id="cancelMemoBtn">キャンセル</button>
-      <button class="btn primary" id="saveMemoBtn">保存</button>
-    </div>
-  </div>
-</div>
 
 <!-- 設定シート(タイトル/URLは自動で決まるので手入力欄は置かない) -->
 <div class="sheet hidden" id="sessionSheet">
@@ -484,7 +450,6 @@
       tagSets: [{ id: 'default', name: 'デフォルト', tags: DEFAULT_TAGS.slice() }],
       activeTagSetId: 'default',
       ytApiKey: '',
-      draftText: '',
       swapPanes: false
     };
   }
@@ -530,13 +495,6 @@
     var h = Math.floor(sec/3600), m = Math.floor((sec%3600)/60), s = sec%60;
     if(h>0) return h+':'+pad(m)+':'+pad(s);
     return pad(m)+':'+pad(s);
-  }
-  function parseTimeInput(str, fallback){
-    var parts = String(str).trim().split(':').map(function(x){ return parseInt(x,10); });
-    if(parts.some(isNaN)) return fallback;
-    var sec = 0;
-    for(var i=0;i<parts.length;i++) sec = sec*60 + parts[i];
-    return Math.max(0, sec);
   }
   function formatDateTime(ms){
     var d = new Date(ms);
@@ -632,7 +590,23 @@
   function createYtPlayer(session){
     if(!session || !session.ytVideoId) return;
     var mode = isTheaterMode() ? 'theater' : 'compact';
-    if(ytPlayer && ytPlayerSessionId===session.id && ytPlayerMode===mode) return; // 既に接続済み
+    if(ytPlayer && ytPlayerSessionId===session.id){
+      if(ytPlayerMode===mode) return; // 既に接続済み・変更なし
+      // 同じ動画のまま折りたたみ⇄展開でモードだけ変わった場合、プレーヤーを
+      // 壊して作り直すと毎回ミュート状態に戻ってしまう(2026-09-05実機報告)。
+      // 再生中の動画・ミュート解除状態・再生位置を保ったまま、iframeそのものを
+      // 新しい表示先へ移動するだけにする(YouTube IFrame APIのプレーヤーは
+      // DOM移動しても再読み込みされない)。
+      var newHostId = mode==='theater' ? 'ytPlayerHostBig' : 'ytPlayerHost';
+      var newHost = document.getElementById(newHostId);
+      var iframeEl = ytPlayer.getIframe ? ytPlayer.getIframe() : null;
+      if(newHost && iframeEl){
+        newHost.innerHTML = '';
+        newHost.appendChild(iframeEl);
+      }
+      ytPlayerMode = mode;
+      return;
+    }
     destroyYtPlayer();
     var hostId = mode==='theater' ? 'ytPlayerHostBig' : 'ytPlayerHost';
     var host = document.getElementById(hostId);
@@ -901,7 +875,6 @@
   var detailSessionId = null;
 
   function showView(name){
-    if(name!=='home' && typeof closeOpenMemo==='function') closeOpenMemo(true); // 記録中のまま別画面に行かない
     currentView = name;
     Object.keys(views).forEach(function(k){ views[k].classList.toggle('hidden', k!==name); });
     navBtns.forEach(function(b){ b.classList.toggle('active', b.dataset.view===name); });
@@ -917,94 +890,13 @@
   });
 
   // ---------- ホーム画面 ----------
+  // 1配信=1つの連続テキスト(session.noteText)。Chrome拡張機能と同じ考え方で、
+  // 個別メモのカード・一覧・編集シートは持たない。🕐は今のカーソル位置に
+  // 時刻を挿入するだけ(タグ挿入と全く同じ仕組み)。何かを書いた瞬間に
+  // セッションが無ければ自動で作る(ensureActiveSession)ので、下書き専用の
+  // 領域(旧draftText)も不要。
   var quickTagsWrap = document.getElementById('quickTagsWrap');
-  var memoListLabel = document.getElementById('memoListLabel');
-  var memoListEl = document.getElementById('memoList');
   var quickMemoTextEl = document.getElementById('quickMemoText');
-  var selectedQuickTags = {};
-
-  // 記録前の下書きも消えないよう常に保存しておく(⚙長押しの強制アップデートは
-  // location.reload()するので、これが無いと打ちかけのメモが消えてしまう)
-  quickMemoTextEl.value = state.draftText || '';
-  function saveDraft(){
-    state.draftText = quickMemoTextEl.value;
-    save();
-  }
-
-  // 🕐を空欄で押すと、そのタイムスタンプのメモをこの場で"開いた"状態にする。
-  // 開いてる間はテキストエリアの入力をそのメモへ直接自動保存する(一覧を開き直す往復をゼロにする)。
-  var openMemoId = null;
-  function updateRecordingIndicator(){
-    var el = document.getElementById('recordingIndicator');
-    var textEl = document.getElementById('recordingIndicatorText');
-    if(!el || !textEl) return;
-    var s = activeSession();
-    var m = openMemoId && s ? s.memos.find(function(x){ return x.id===openMemoId; }) : null;
-    if(m){
-      el.classList.remove('hidden');
-      textEl.textContent = formatElapsed(m.t) + ' を記録中… 続けて入力できます';
-    } else {
-      el.classList.add('hidden');
-      textEl.textContent = '';
-    }
-  }
-  function updateMemoListRowText(memoId, text){
-    var row = memoListEl.querySelector('.memo-item[data-id="'+memoId+'"] .memo-text');
-    if(!row) return; // まだ一覧に描画されていなければ何もしない(次のrenderHomeで反映される)
-    row.classList.toggle('empty', !text);
-    row.textContent = text || '（本文なし）';
-  }
-  quickMemoTextEl.addEventListener('input', function(){
-    if(openMemoId){
-      var s = activeSession();
-      var m = s && s.memos.find(function(x){ return x.id===openMemoId; });
-      if(m){
-        m.text = quickMemoTextEl.value;
-        save();
-        updateMemoListRowText(openMemoId, quickMemoTextEl.value);
-      }
-    } else {
-      saveDraft();
-    }
-  });
-
-  // 開いてるメモをその場で確定する。text入りで確定した時だけ取り消しトーストを出す
-  // (silent=true は「詳細編集シートに切り替える」等、確定の演出が不要な場合)
-  function closeOpenMemo(silent){
-    if(!openMemoId) return;
-    var s = activeSession();
-    var m = s && s.memos.find(function(x){ return x.id===openMemoId; });
-    var closedId = openMemoId;
-    openMemoId = null;
-    updateRecordingIndicator();
-    if(!silent && m && m.text){
-      showToast(formatElapsed(m.t) + ' を記録しました', '取り消す', function(){
-        var s2 = activeSession();
-        if(!s2) return;
-        var idx = s2.memos.findIndex(function(x){ return x.id===closedId; });
-        if(idx>=0) s2.memos.splice(idx,1);
-        save();
-        if(currentView==='home') renderHome();
-      });
-    }
-  }
-  // 現在時刻でメモを即作成し、その場(テキストエリア)を書き続けられる状態にする
-  function startOpenMemo(){
-    var s = ensureActiveSession();
-    var t = currentElapsedSec(s);
-    var memo = { id: uid(), t: t, text: '', tags: [], createdAt: Date.now() };
-    s.memos.push(memo);
-    state.draftText = '';
-    openMemoId = memo.id;
-    save();
-    quickMemoTextEl.value = '';
-    renderHome();
-    // Android WebViewは、別要素(🕐ボタン)のタップ由来の同期focus()だけだと
-    // ソフトキーボードを出さないコトがある(仕様上ユーザー操作と信用しきれない)。
-    // 即時focus+一呼吸おいての再focusの二段構えにする(openMemoSheetの既存手口と同じ対策)。
-    quickMemoTextEl.focus();
-    setTimeout(function(){ quickMemoTextEl.focus(); }, 80);
-  }
 
   function ensureActiveSession(){
     var s = activeSession();
@@ -1016,7 +908,7 @@
       url: '',
       startedAt: Date.now(),
       endedAt: null,
-      memos: []
+      noteText: ''
     };
     state.sessions.push(s);
     state.activeSessionId = s.id;
@@ -1024,39 +916,18 @@
     return s;
   }
 
+  quickMemoTextEl.addEventListener('input', function(){
+    var s = ensureActiveSession();
+    s.noteText = quickMemoTextEl.value;
+    save();
+  });
+
   function renderHome(){
     var s = activeSession();
     updateTimerDisplay();
     renderQuickTags(quickTagsWrap, insertTagTemplate);
     renderYtPanel(s);
-
-    if(!s){
-      memoListLabel.textContent = '';
-      memoListEl.innerHTML = '';
-      return;
-    }
-    memoListLabel.textContent = 'メモ（' + s.memos.length + '件）';
-    renderMemoItems(memoListEl, s.memos, function(memo){
-      if(memo.id === openMemoId){
-        // 記録中の自分の行をタップした場合、無警告で編集シートに切り替わると
-        // 「記録が急に終わった」ように見えて驚かせる。テキストエリアに戻すだけにする。
-        views.home.scrollTop = 0;
-        quickMemoTextEl.focus();
-        return;
-      }
-      openMemoSheet(memo.id);
-    });
-    updateRecordingIndicator();
-    // 実際にスクロールするのはmemoListElの親である.view(homeView)側。
-    if(openMemoId){
-      // 記録中(🕐を空欄で押した直後)はテキストエリアがこの画面の先頭にあるので、
-      // そこへ書き続けられるよう先頭を表示する。一番下までスクロールすると、
-      // 肝心のテキストエリアがメモ一覧の下に押し出されて見えなくなってしまう。
-      views.home.scrollTop = 0;
-    } else {
-      // 通常時: 新しく記録したメモが下帯に隠れず見えるよう、一番下までスクロールしておく。
-      views.home.scrollTop = views.home.scrollHeight;
-    }
+    quickMemoTextEl.value = s ? (s.noteText || '') : '';
   }
 
   function renderQuickTags(container, onTap){
@@ -1068,56 +939,39 @@
     });
   }
 
-  // タグボタン＝メモ欄のカーソル位置にテキストを挿入する(即記録はしない)。
-  // "◆◇"だけは中身が空のテンプレートなので、◆と◇の間にカーソルを置いて
-  // そのまま打ち込める状態にする。それ以外は挿入したテキストの直後にカーソルを置く。
-  function insertTagTemplate(tagName){
+  // カーソル位置にテキストを挿入して、input発火まで面倒を見る共通処理。
+  // タグ挿入・タイムスタンプ挿入の両方がコレを使う。
+  function insertAtCursor(text, cursorOffset){
     var el = quickMemoTextEl;
     el.focus();
     var start = el.selectionStart != null ? el.selectionStart : el.value.length;
     var end = el.selectionEnd != null ? el.selectionEnd : el.value.length;
-    el.value = el.value.slice(0, start) + tagName + el.value.slice(end);
-    var cursorPos = (tagName === '◆◇') ? start + 1 : start + tagName.length;
+    el.value = el.value.slice(0, start) + text + el.value.slice(end);
+    var cursorPos = start + (cursorOffset != null ? cursorOffset : text.length);
     el.setSelectionRange(cursorPos, cursorPos);
     // .valueへの直接代入はinputイベントが飛ばないため、明示的にinputを発火させて
-    // テキストエリアのinputリスナー(記録中openMemoIdならそのメモへ・それ以外は下書きへ)に
-    // 一本化する。ここで直接saveDraft()を呼ぶと、記録中に挿入したタグが
-    // 実際のメモ(s.memos)へ保存されずに消えるバグになる(2026-09-04発覚)。
+    // テキストエリアのinputリスナー(保存処理)に一本化する。
     el.dispatchEvent(new Event('input', {bubbles:true}));
   }
 
-  // 常時表示のテキストボックスの内容を、その瞬間のタイムスタンプで記録する。
-  // ダイアログを開かず、書きながら押すだけで済ませるための主動線。
-  //
-  // ①先に書いてから押した場合: 今まで通りその場で確定してクリア(既存の使い方を壊さない)。
-  // ②何も書かず押した場合: 急な出来事をまず時刻だけ確保したいケース。一覧を開き直す
-  //   往復をさせず、押した瞬間からこのテキストエリアがそのメモに直結した状態のまま
-  //   続けて書けるようにする(openMemoId)。もう一度押すとそれを確定し、次の瞬間を開く。
+  // タグボタン＝メモ欄のカーソル位置にテキストを挿入する。
+  // "◆◇"だけは中身が空のテンプレートなので、◆と◇の間にカーソルを置いて
+  // そのまま打ち込める状態にする。それ以外は挿入したテキストの直後にカーソルを置く。
+  function insertTagTemplate(tagName){
+    insertAtCursor(tagName, tagName === '◆◇' ? 1 : undefined);
+  }
+
+  // 🕐＝今の再生位置をカーソル位置にテキストとして挿入するだけ(拡張機能のAlt+Tと同じ)。
+  // モーダルも一覧遷移も無く、押した瞬間からそのまま続けて書ける。
+  // 既に何か書きかけの行の途中なら、時刻の前に改行を1つ入れて新しい行から始める
+  // (欄が空、または既に行頭にいる場合は改行を足さない)。
   function stampQuickMemo(){
-    if(openMemoId){
-      closeOpenMemo(false); // 書いた内容があれば①と同じ「記録しました/取り消す」トーストを出す
-      startOpenMemo();
-      return;
-    }
     var s = ensureActiveSession();
     var t = currentElapsedSec(s);
-    var text = quickMemoTextEl.value.trim();
-    if(text){
-      var memo = { id: uid(), t: t, text: text, tags: [], createdAt: Date.now() };
-      s.memos.push(memo);
-      state.draftText = '';
-      save();
-      quickMemoTextEl.value = '';
-      renderHome();
-      showToast(formatElapsed(t) + ' を記録しました', '取り消す', function(){
-        var idx = s.memos.findIndex(function(m){ return m.id===memo.id; });
-        if(idx>=0) s.memos.splice(idx,1);
-        save();
-        if(currentView==='home') renderHome();
-      });
-      return;
-    }
-    startOpenMemo();
+    var el = quickMemoTextEl;
+    var start = el.selectionStart != null ? el.selectionStart : el.value.length;
+    var needsNewline = start > 0 && el.value.charAt(start-1) !== '\n';
+    insertAtCursor((needsNewline ? '\n' : '') + formatElapsed(t) + ' ');
   }
 
   function renderMemoItems(container, memos, onTap){
@@ -1168,7 +1022,6 @@
   // 確認ダイアログ無しの版。共有起動時など、確認を挟まず自動でセッションを
   // 閉じたい場面向け(履歴には残るのでデータは消えない)。
   function endActiveSessionCore(s){
-    if(typeof closeOpenMemo==='function') closeOpenMemo(true);
     s.endedAt = Date.now();
     state.activeSessionId = null;
     destroyYtPlayer();
@@ -1344,107 +1197,6 @@
     applySwapPanes();
   });
 
-  // ---------- メモ入力/編集シート ----------
-  var memoSheet = document.getElementById('memoSheet');
-  var memoSheetTitle = document.getElementById('memoSheetTitle');
-  var sheetTimeEl = document.getElementById('sheetTime');
-  var memoTextEl = document.getElementById('memoText');
-  var sheetTagRow = document.getElementById('sheetTagRow');
-  var newTagInput = document.getElementById('newTagInput');
-  var deleteMemoBtn = document.getElementById('deleteMemoBtn');
-
-  var editingMemoId = null;   // null = 新規
-  var editingTime = 0;
-  var editingTags = {};
-
-  function openMemoSheet(memoId){
-    if(typeof closeOpenMemo==='function') closeOpenMemo(true); // 詳細編集に切り替えるので、簡易記録モードは静かに閉じる
-    var s = ensureActiveSession();
-    editingMemoId = memoId || null;
-    var memo = editingMemoId ? s.memos.find(function(m){ return m.id===editingMemoId; }) : null;
-
-    editingTime = memo ? memo.t : currentElapsedSec(s);
-    editingTags = {};
-    (memo ? memo.tags : []).forEach(function(t){ editingTags[t]=true; });
-
-    memoSheetTitle.textContent = memo ? 'メモを編集' : 'メモを記録';
-    memoTextEl.value = memo ? memo.text : '';
-    deleteMemoBtn.style.display = memo ? '' : 'none';
-    renderSheetTime();
-    renderSheetTags();
-    memoSheet.classList.remove('hidden');
-    if(!memo){ setTimeout(function(){ memoTextEl.focus(); }, 80); }
-  }
-  function closeMemoSheet(){ memoSheet.classList.add('hidden'); newTagInput.value=''; }
-
-  function renderSheetTime(){ sheetTimeEl.textContent = formatElapsed(editingTime); }
-  document.getElementById('timeMinus').addEventListener('click', function(){ editingTime = Math.max(0, editingTime-10); renderSheetTime(); });
-  document.getElementById('timePlus').addEventListener('click', function(){ editingTime += 10; renderSheetTime(); });
-  sheetTimeEl.addEventListener('click', function(){
-    var input = prompt('時刻を mm:ss または h:mm:ss で入力', formatElapsed(editingTime));
-    if(input===null) return;
-    editingTime = parseTimeInput(input, editingTime);
-    renderSheetTime();
-  });
-
-  function renderSheetTags(){
-    var allTags = activeTagSet().tags.slice();
-    Object.keys(editingTags).forEach(function(t){ if(allTags.indexOf(t)===-1) allTags.push(t); });
-    sheetTagRow.innerHTML = allTags.map(function(t){
-      var sel = editingTags[t] ? ' selected' : '';
-      return '<button type="button" class="chip'+sel+'" data-tag="'+escapeAttr(t)+'">'+escapeHtml(t)+'</button>';
-    }).join('');
-    sheetTagRow.querySelectorAll('.chip').forEach(function(el){
-      el.addEventListener('click', function(){
-        var t = el.dataset.tag;
-        if(editingTags[t]) delete editingTags[t]; else editingTags[t]=true;
-        renderSheetTags();
-      });
-    });
-  }
-  document.getElementById('addTagBtn').addEventListener('click', addNewTagFromInput);
-  newTagInput.addEventListener('keydown', function(e){ if(e.key==='Enter'){ e.preventDefault(); addNewTagFromInput(); } });
-  function addNewTagFromInput(){
-    var t = newTagInput.value.trim();
-    if(!t) return;
-    var set = activeTagSet();
-    if(set.tags.indexOf(t)===-1) set.tags.push(t);
-    editingTags[t] = true;
-    newTagInput.value = '';
-    save();
-    renderSheetTags();
-  }
-
-  document.getElementById('cancelMemoBtn').addEventListener('click', closeMemoSheet);
-  memoSheet.querySelector('.sheet-backdrop').addEventListener('click', closeMemoSheet);
-
-  document.getElementById('saveMemoBtn').addEventListener('click', function(){
-    var s = ensureActiveSession();
-    var tags = Object.keys(editingTags);
-    var text = memoTextEl.value.trim();
-    if(editingMemoId){
-      var m = s.memos.find(function(x){ return x.id===editingMemoId; });
-      if(m){ m.t = editingTime; m.text = text; m.tags = tags; }
-    } else {
-      s.memos.push({ id: uid(), t: editingTime, text: text, tags: tags, createdAt: Date.now() });
-    }
-    save();
-    closeMemoSheet();
-    renderHome();
-  });
-
-  deleteMemoBtn.addEventListener('click', function(){
-    var s = ensureActiveSession();
-    if(!editingMemoId) return;
-    var idx = s.memos.findIndex(function(x){ return x.id===editingMemoId; });
-    if(idx>=0 && confirm('このメモを削除しますか？')){
-      s.memos.splice(idx,1);
-      save();
-      closeMemoSheet();
-      renderHome();
-    }
-  });
-
   document.getElementById('recordBtn').addEventListener('click', stampQuickMemo);
 
   // ---------- 履歴画面 ----------
@@ -1460,7 +1212,7 @@
       var dur = formatElapsed(currentElapsedSec(s));
       return '<div class="session-row" data-id="'+s.id+'">' +
         '<div class="t1">'+escapeHtml(s.title)+(isLive?' <span class="live">● 記録中</span>':'')+'</div>' +
-        '<div class="t2">'+formatDateTime(s.startedAt)+' ・ '+dur+' ・ メモ'+s.memos.length+'件</div>' +
+        '<div class="t2">'+formatDateTime(s.startedAt)+' ・ '+dur+' ・ '+memoCountLabel(s)+'</div>' +
         '</div>';
     }).join('');
     sessionListEl.querySelectorAll('.session-row').forEach(function(el){
@@ -1476,16 +1228,29 @@
   var detailMemoList = document.getElementById('detailMemoList');
   document.getElementById('backToHistoryBtn').addEventListener('click', function(){ showView('history'); });
 
+  // 新形式(noteText=1つの連続テキスト)と旧形式(memos=構造化された配列)の
+  // 両方を扱う小さなヘルパー。旧セッションの履歴閲覧との互換のため両対応する。
+  function memoCountLabel(s){
+    if(s.noteText !== undefined){
+      var lines = (s.noteText || '').split('\n').filter(function(l){ return l.trim(); });
+      return lines.length + '行';
+    }
+    return 'メモ' + s.memos.length + '件';
+  }
   function buildExportText(s){
     var lines = [];
     lines.push('■ ' + s.title);
     if(s.url) lines.push(s.url);
     lines.push(formatDateTime(s.startedAt) + ' 開始');
     lines.push('');
-    s.memos.slice().sort(function(a,b){ return a.t-b.t; }).forEach(function(m){
-      var tagStr = m.tags && m.tags.length ? ' ['+m.tags.join(' ')+']' : '';
-      lines.push(formatElapsed(m.t) + ' ' + m.text + tagStr);
-    });
+    if(s.noteText !== undefined){
+      lines.push(s.noteText);
+    } else {
+      s.memos.slice().sort(function(a,b){ return a.t-b.t; }).forEach(function(m){
+        var tagStr = m.tags && m.tags.length ? ' ['+m.tags.join(' ')+']' : '';
+        lines.push(formatElapsed(m.t) + ' ' + m.text + tagStr);
+      });
+    }
     return lines.join('\n');
   }
 
@@ -1513,7 +1278,7 @@
     detailHeader.innerHTML =
       '<div class="session-title">'+escapeHtml(s.title)+(isLive?' <span class="live" style="font-size:13px;">● 記録中</span>':'')+'</div>' +
       (s.url ? '<div class="session-url">'+escapeHtml(s.url)+'</div>' : '') +
-      '<div class="session-hint" style="margin-top:8px;">'+formatDateTime(s.startedAt)+' 開始 ・ 長さ '+formatElapsed(currentElapsedSec(s))+' ・ メモ'+s.memos.length+'件</div>' +
+      '<div class="session-hint" style="margin-top:8px;">'+formatDateTime(s.startedAt)+' 開始 ・ 長さ '+formatElapsed(currentElapsedSec(s))+' ・ '+memoCountLabel(s)+'</div>' +
       '<div class="detail-actions">' +
         '<button class="btn" id="copyBtn">📋 テキストをコピー</button>' +
         (isLive ? '' : '<button class="btn danger" id="deleteSessionBtn">この配信メモを削除</button>') +
@@ -1530,15 +1295,19 @@
         }
       });
     }
-    renderMemoItems(detailMemoList, s.memos, function(){ /* 履歴内は閲覧のみ */ });
+    if(s.noteText !== undefined){
+      detailMemoList.innerHTML = '<div class="detail-note-text">' + (s.noteText ? escapeHtml(s.noteText) : '<span class="empty-state">まだ何も書かれていません。</span>') + '</div>';
+    } else {
+      renderMemoItems(detailMemoList, s.memos, function(){ /* 履歴内は閲覧のみ(旧形式) */ });
+    }
   }
 
   // ---------- ヘルプ ----------
   document.getElementById('helpBtn').addEventListener('click', function(){
     alert(
       '【使い方】\n' +
-      '・上のテキスト欄に配信を見ながら自由にメモを書いて、右下のタイムスタンプボタン（00:00:00の表示）を押すと、その瞬間の時間とテキストがセットで記録され、欄は空になります(配信は自動で始まります)。\n' +
-      '・タグをタップすると、メモ欄のカーソル位置にそのタグを挿入します（記録は右下のタイムスタンプボタンで行う）。「◆◇」はカーソルが◆と◇の間に来るので、そのまま中身を打ち込めます。タグは⚙設定の「クイックタグ」から自由に追加・削除できます。\n' +
+      '・上のテキスト欄に配信を見ながら自由に書いていきます（配信は書き始めた瞬間に自動で始まります）。右下のタイムスタンプボタン（🕐）を押すと、今のカーソル位置に現在の時刻が挿入されるだけです。一覧やダイアログは開かず、そのまま続けて書けます。\n' +
+      '・タグをタップすると、メモ欄のカーソル位置にそのタグを挿入します（🕐と同じ仕組み）。「◆◇」はカーソルが◆と◇の間に来るので、そのまま中身を打ち込めます。タグは⚙設定の「クイックタグ」から自由に追加・削除できます。\n' +
       '・⚙（設定）は下帯の右端。YouTube連携の状態確認・連携解除、配信の終了はここから。\n' +
       '・⚙設定のYouTube連携欄にURLを貼るか、キーワードで検索して一覧から選ぶと、配信の再生位置から経過時間を自動取得します（通信が必要・右上に小さく動画が出ます）。検索にはAPIキーの登録が別途必要（「検索用APIキーを設定」から）。ズレを感じたら±5秒で微調整できます。タイトルとURLは連携内容から自動で決まるので手入力は不要です。\n' +
       '・画面が横長・正方形に近いくらい広いとき（分割画面など）は、左に動画とチャット、右にメモという2ペイン表示に自動で切り替わります。動画は音量ミュートで始まるので、必要ならプレーヤー上のボタンでミュート解除してください。\n' +
