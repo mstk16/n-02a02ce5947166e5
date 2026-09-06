@@ -51,10 +51,18 @@
   @media (min-width:700px){
     /* 元は動画側1.15fr:メモ側1fr(動画優先)だったが、クイック追加バー等の
        入力欄が増えてメモ側が窮屈という指摘(2026-09-06)を受け、メモ側を
-       広くする比率に変更する */
-    #root{display:grid; grid-template-columns:0.85fr 1.15fr; height:100dvh;}
+       広くする比率に変更する。
+       ⚠grid-template-columnsの2列(0.85fr/1.15fr)にサイズを持たせて
+       orderで中身を列間移動する方式だと、「列」にサイズが紐づくため
+       入れ替えると幅まで一緒に入れ替わってしまう(2026-09-06発覚:
+       「配置の大きさはそのまま、位置だけ入れ替えたい」という指示に反する)。
+       displayをflexにし、各要素自身にflex-basisを持たせることで、
+       サイズを中身(メモ=狭い/チャット=広い)に固定し、orderは純粋に
+       左右の位置だけを動かすようにする */
+    #root{display:flex; height:100dvh;}
     #videoPane{
       display:flex; flex-direction:column; height:100dvh; min-width:0;
+      flex:1.15 1.15 0%;
       border-right:1px solid var(--border); background:#000;
     }
     .video-box{flex:0 0 auto; aspect-ratio:16/9; background:#000;}
@@ -78,7 +86,9 @@
     /* シアターモードでは動画は左ペインが本体なので、右上の小プレビューは隠す */
     .yt-float{display:none;}
     /* フローティングキーボードが出る側に応じて、メモとチャット(動画)の左右を
-       入れ替えられるように(⚙設定から切替)。DOM順は変えずgridのorderだけ動かす */
+       入れ替えられるように(⚙設定から切替)。DOM順は変えずflexのorderだけ動かす。
+       各要素は自分自身にflex-basisを持つ(上記)ので、orderで位置を動かしても
+       サイズは中身に固定されたまま入れ替わらない */
     #root.swap-panes #videoPane{ order:2; border-right:none; border-left:1px solid var(--border); }
     #root.swap-panes #app{ order:1; }
   }
@@ -317,7 +327,7 @@
        (2026-09-06発覚「メモ画面が狭すぎ」の真因。列の比率だけ直しても
        この上限に阻まれて効かなかった)。ここ(通常#appルールより後)に
        書くことで確実に上書きする */
-    #app{max-width:none; margin:0;}
+    #app{max-width:none; margin:0; flex:0.85 0.85 0%; min-width:0;}
     .toast{position:absolute;}
     /* 操作を#videoPane側へ出した分、#appのメモ欄はもう下帯ぶんの余白を
        確保しなくていい(むしろ余白が無駄になり書ける面積が減っていた) */
