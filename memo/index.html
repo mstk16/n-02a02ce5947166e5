@@ -61,6 +61,17 @@
     .video-box iframe, .video-box > div{width:100%; height:100%;}
     .chat-box{flex:1 1 auto; min-height:0; background:var(--bg);}
     .chat-box iframe{width:100%; height:100%; border:0; display:block;}
+    /* 内画面ではJSが#controlsGroupをこの下(チャットの下)へ移動してくる。
+       fixed/absoluteのままだとvideoPaneのflex columnに参加できないので
+       通常の(位置指定なしの)ブロックに戻す。チャット欄が狭くなるのは
+       ユーザー指示どおり(flex:1のchat-boxが自動で譲る)。
+       ⚠ID+子孫クラスのセレクタなので、無印の.tag-bar{position:fixed}等より
+       詳細度で確実に勝つ(ソース順に依存しない) */
+    #videoPane{ overflow:hidden; }
+    #videoPane #controlsGroup{ flex:0 0 auto; }
+    #videoPane .tag-bar, #videoPane .quick-add-bar, #videoPane .action-bar{
+      position:static; max-width:none; margin:0; left:auto; right:auto; bottom:auto;
+    }
     /* #appのmax-width解除は、後段の#app{max-width:560px}(通常時ルール)より
        ソース順で後にある@media(min-width:700px)ブロックの方に書いてある
        (ここに書いても後勝ちの通常ルールに上書きされて効かないため)。 */
@@ -294,8 +305,11 @@
   .toast.show{opacity:1; pointer-events:auto;}
   .toast button{background:none; border:none; color:var(--accent); font-weight:700; font-size:13.5px; cursor:pointer;}
 
-  /* シアターモードでは#appが右ペインだけになるので、fixed系のUIも
-     画面全体ではなく#app基準(position:relative)に収める */
+  /* シアターモードでは#appが右ペインだけになるので、トースト等のfixed系UIも
+     画面全体ではなく#app基準(position:relative)に収める。操作系(タグ行・
+     クイック追加バー・下帯)は#controlsGroupごとJSで#videoPane側へ移動
+     するので、ここでは対象にしない(上のvideoPane向けルールで別途リセット
+     済み・2026-09-06) */
   @media (min-width:700px){
     /* ⚠#app{max-width:560px}という通常時ルールがコレより後(ソース順で下)に
        あるため、同じ詳細度では後勝ちでこの上書きが無視され、シアターモードでも
@@ -304,8 +318,10 @@
        この上限に阻まれて効かなかった)。ここ(通常#appルールより後)に
        書くことで確実に上書きする */
     #app{max-width:none; margin:0;}
-    .action-bar, .tag-bar, .quick-add-bar, .toast{position:absolute;}
-    .action-bar{max-width:none;}
+    .toast{position:absolute;}
+    /* 操作を#videoPane側へ出した分、#appのメモ欄はもう下帯ぶんの余白を
+       確保しなくていい(むしろ余白が無駄になり書ける面積が減っていた) */
+    .view{padding-bottom:calc(14px + var(--safe-b));}
     /* 内画面(Z Fold展開等の広い画面)では🕐が左端・他が右端に離れていると
        親指移動が大きくて押しにくい。ユーザー指示で全部右側に寄せる */
     .action-bar{justify-content:flex-end;}
@@ -358,6 +374,8 @@
 <div id="videoPane">
   <div class="video-box"><div id="ytPlayerHostBig"></div></div>
   <div class="chat-box" id="ytChatWrap"></div>
+  <!-- 内画面(シアターモード)ではここに#controlsGroupが移動してくる(JS側で制御)。
+       チャットの下に操作を置きたい、というユーザー指示(2026-09-06)への対応 -->
 </div>
 <div id="app">
 
@@ -385,31 +403,37 @@
     <div class="memo-list" id="detailMemoList"></div>
   </main>
 
-  <!-- タグ専用の行(記録画面のときだけ表示) -->
-  <div class="tag-bar" id="quickTagsWrap"></div>
+  <!-- 操作をまとめて動かせるように1つにグルーピングする(2026-09-06)。
+       内画面(シアターモード)ではJSがコレを丸ごと#videoPane(チャットの下)へ
+       移動する。通常時はここ(#controlsHomeAnchorの直後)が定位置 -->
+  <div id="controlsHomeAnchor" style="display:none"></div>
+  <div id="controlsGroup">
+    <!-- タグ専用の行(記録画面のときだけ表示) -->
+    <div class="tag-bar" id="quickTagsWrap"></div>
 
-  <!-- クイック追加バー(記録画面のときだけ表示)。PC版と同じくEnter/追加で
-       タイムスタンプ付きの1行として末尾に追記し、欄はクリアされる -->
-  <div class="quick-add-bar" id="quickAddBar">
-    <div class="quick-add-row">
-      <input type="text" id="quickAddMemoInput" placeholder="配信中のメモをここに（Enterで追加）">
-      <button class="btn primary" id="quickAddMemoBtn">追加</button>
+    <!-- クイック追加バー(記録画面のときだけ表示)。PC版と同じくEnter/追加で
+         タイムスタンプ付きの1行として末尾に追記し、欄はクリアされる -->
+    <div class="quick-add-bar" id="quickAddBar">
+      <div class="quick-add-row">
+        <input type="text" id="quickAddMemoInput" placeholder="配信中のメモをここに（Enterで追加）">
+        <button class="btn primary" id="quickAddMemoBtn">追加</button>
+      </div>
+      <div class="quick-add-row guest">
+        <input type="text" id="quickAddGuestInput" placeholder="ゲストのセリフをここに（Enterで追加）">
+        <button class="btn" id="quickAddGuestBtn">追加</button>
+      </div>
     </div>
-    <div class="quick-add-row guest">
-      <input type="text" id="quickAddGuestInput" placeholder="ゲストのセリフをここに（Enterで追加）">
-      <button class="btn" id="quickAddGuestBtn">追加</button>
-    </div>
+
+    <!-- 操作はこの下帯に集約。設定は常に一番右 -->
+    <nav class="action-bar" id="actionBar">
+      <button class="record-chip" id="recordBtn" aria-label="この瞬間を記録">🕐</button>
+      <div class="action-bar-nav">
+        <button class="navchip active" id="navHomeBtn" data-view="home" aria-label="記録">📝</button>
+        <button class="navchip" id="navHistoryBtn" data-view="history" aria-label="履歴">📚</button>
+        <button class="iconbtn" id="settingsBtn" aria-label="設定">⚙</button>
+      </div>
+    </nav>
   </div>
-
-  <!-- 操作はこの下帯に集約。設定は常に一番右 -->
-  <nav class="action-bar" id="actionBar">
-    <button class="record-chip" id="recordBtn" aria-label="この瞬間を記録">🕐</button>
-    <div class="action-bar-nav">
-      <button class="navchip active" id="navHomeBtn" data-view="home" aria-label="記録">📝</button>
-      <button class="navchip" id="navHistoryBtn" data-view="history" aria-label="履歴">📚</button>
-      <button class="iconbtn" id="settingsBtn" aria-label="設定">⚙</button>
-    </div>
-  </nav>
 
   <div class="toast" id="toast">
     <span id="toastMsg"></span>
@@ -633,7 +657,26 @@
   // 横長/正方形に近い広い画面では「シアターモード」(動画+チャットを大きく表示)に切り替える。
   var ytTheaterQuery = window.matchMedia('(min-width: 700px)'); // CSS側の@mediaと必ず同じ値にする
   function isTheaterMode(){ return ytTheaterQuery.matches; }
+
+  // 内画面(シアターモード)では操作(タグ行・クイック追加バー・下帯)を丸ごと
+  // #videoPane側(チャットの下)へ移動する。通常モードでは#appの元の位置
+  // (#controlsHomeAnchorの直後)へ戻す(2026-09-06ユーザー指示: チャット欄が
+  // 狭くなってもいいから、タップして使う物は画面右のチャットの下に置きたい)。
+  function relocateControlsForMode(){
+    var group = document.getElementById('controlsGroup');
+    if(!group) return;
+    if(isTheaterMode()){
+      var videoPane = document.getElementById('videoPane');
+      if(group.parentElement !== videoPane) videoPane.appendChild(group);
+    } else {
+      var anchor = document.getElementById('controlsHomeAnchor');
+      if(anchor && group.previousElementSibling !== anchor){
+        anchor.parentElement.insertBefore(group, anchor.nextSibling);
+      }
+    }
+  }
   ytTheaterQuery.addEventListener('change', function(){
+    relocateControlsForMode();
     var s = activeSession();
     renderYtPanel(s);
   });
@@ -1454,6 +1497,7 @@
   })();
 
   // ---------- 初期化 ----------
+  relocateControlsForMode(); // 起動時点で内画面ならチャットの下に操作を出しておく
   showView('home');
 
   if('serviceWorker' in navigator && location.protocol.indexOf('http')===0){
