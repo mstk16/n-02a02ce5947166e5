@@ -456,6 +456,18 @@
     </label>
     <div class="session-hint" style="margin-top:4px;">フローティングキーボードが出る側にメモが隠れる場合、反対側に逃がすために使う。</div>
 
+    <div class="field-label">PC連携（任意・自宅PCの配信メモ拡張機能へ差分を自動送信）</div>
+    <div class="add-tag-row">
+      <input type="text" id="pcSyncKeyInput" placeholder="PC連携キー（PC側config.jsonと同じ文字列）">
+    </div>
+    <div class="add-tag-row" style="margin-top:8px;">
+      <input type="text" id="pcSyncHostInput" placeholder="PC接続先（例：192.168.1.23:8765）">
+    </div>
+    <div class="add-tag-row" style="margin-top:8px;">
+      <button class="btn" id="pcSyncSaveBtn">保存</button>
+    </div>
+    <div class="session-hint" id="pcSyncStatusText" style="margin-top:4px;"></div>
+
     <div id="ytLinkSection">
       <div class="field-label">YouTube連携（任意・経過時間を自動取得）</div>
       <div class="add-tag-row">
@@ -522,7 +534,10 @@
       tagSets: [{ id: 'default', name: 'デフォルト', tags: DEFAULT_TAGS.slice() }],
       activeTagSetId: 'default',
       ytApiKey: '',
-      swapPanes: false
+      swapPanes: false,
+      pcSyncKey: '',
+      pcSyncHost: '',
+      pcLastSyncAt: null
     };
   }
   // 旧バージョン(タグがtagPresetsのフラット配列だった頃)からの移行
@@ -970,6 +985,107 @@
     }
   });
 
+  // ---------- PC連携(スマホ→PC拡張機能への片方向自動同期・任意) ----------
+  // ⚙設定の「PC連携キー」「PC接続先」が両方入力されているときだけ動く
+  // (どちらか空欄なら既定でOFF)。PC側はvoice_input/ws_server.pyのpushMobileNote
+  // コマンド(WebSocket・LAN内0.0.0.0:8765で待受)。session.pcSyncedLenを
+  // 「PCへ送信済みの文字数」カーソルとして持ち、noteTextの末尾からの増分
+  // だけをws_serverへ送る。片方向(PWA→PC)専用でPC側のメモは一切取り込まない。
+  // 失敗(自宅WiFi外・PC未起動など)はユーザーに見せず黙って諦め、pcSyncedLenも
+  // 進めない→次回Tickで同じ差分を送り直す形で自然にリトライされる。
+  var PC_SYNC_INTERVAL_MS = 30000;
+  var PC_SYNC_TIMEOUT_MS = 4000;
+  var pcSyncBusy = false;
+
+  function pcSyncConfigured(){
+    return !!(state.pcSyncKey && state.pcSyncHost);
+  }
+
+  function updatePcSyncStatusDisplay(){
+    var el = document.getElementById('pcSyncStatusText');
+    if(!el) return;
+    el.textContent = (pcSyncConfigured() && state.pcLastSyncAt)
+      ? '最終同期: ' + formatDateTime(state.pcLastSyncAt)
+      : '';
+  }
+
+  // 動画IDが紐づいていて、かつ前回送信より本文が増えているセッションだけが対象
+  // (YouTube未連携のメモだけのセッションは対象外)。
+  function pcSyncEligibleSessions(){
+    return state.sessions.filter(function(s){
+      return s.ytVideoId && (s.noteText || '').length > (s.pcSyncedLen || 0);
+    });
+  }
+
+  function pcSyncOneSession(s, cb){
+    var diff = (s.noteText || '').slice(s.pcSyncedLen || 0);
+    if(!diff.trim()){ cb(); return; } // 差分が空白だけなら送信自体をスキップ
+    var settled = false;
+    var ws = null;
+    var timer = setTimeout(function(){ finish(); }, PC_SYNC_TIMEOUT_MS);
+    function finish(){
+      if(settled) return;
+      settled = true;
+      clearTimeout(timer);
+      try{ if(ws) ws.close(); }catch(e){}
+      cb();
+    }
+    try{
+      ws = new WebSocket('ws://' + state.pcSyncHost);
+    }catch(e){ finish(); return; }
+    ws.addEventListener('open', function(){
+      try{
+        ws.send(JSON.stringify({
+          cmd: 'pushMobileNote', key: state.pcSyncKey,
+          video_id: s.ytVideoId, text: diff, title: s.title || ''
+        }));
+      }catch(e){ finish(); }
+    });
+    ws.addEventListener('message', function(ev){
+      if(settled) return;
+      var data = null;
+      try{ data = JSON.parse(ev.data); }catch(e){}
+      if(data && data.type === 'pushMobileNoteResult'){
+        if(data.ok){
+          s.pcSyncedLen = s.noteText.length;
+          state.pcLastSyncAt = Date.now();
+          save();
+          updatePcSyncStatusDisplay();
+        }
+        finish();
+      }
+    });
+    ws.addEventListener('error', finish);
+    ws.addEventListener('close', finish);
+  }
+
+  function pcSyncRunQueue(list, done){
+    if(!list.length){ done(); return; }
+    var s = list.shift();
+    pcSyncOneSession(s, function(){ pcSyncRunQueue(list, done); });
+  }
+
+  function pcSyncTick(){
+    if(pcSyncBusy) return;
+    if(document.visibilityState !== 'visible') return;
+    if(!pcSyncConfigured()) return;
+    var list = pcSyncEligibleSessions();
+    if(!list.length) return;
+    pcSyncBusy = true;
+    pcSyncRunQueue(list, function(){ pcSyncBusy = false; });
+  }
+  setInterval(pcSyncTick, PC_SYNC_INTERVAL_MS);
+
+  var pcSyncKeyInput = document.getElementById('pcSyncKeyInput');
+  var pcSyncHostInput = document.getElementById('pcSyncHostInput');
+  document.getElementById('pcSyncSaveBtn').addEventListener('click', function(){
+    state.pcSyncKey = pcSyncKeyInput.value.trim();
+    state.pcSyncHost = pcSyncHostInput.value.trim();
+    save();
+    showToast('PC連携の設定を保存しました');
+    updatePcSyncStatusDisplay();
+  });
+
   // ---------- Toast ----------
   var toastEl = document.getElementById('toast');
   var toastMsg = document.getElementById('toastMsg');
@@ -1032,7 +1148,8 @@
       url: '',
       startedAt: Date.now(),
       endedAt: null,
-      noteText: ''
+      noteText: '',
+      pcSyncedLen: 0
     };
     state.sessions.push(s);
     state.activeSessionId = s.id;
@@ -1198,6 +1315,9 @@
     updateTimerDisplay();
     renderTagSetList();
     renderTagManageList();
+    pcSyncKeyInput.value = state.pcSyncKey || '';
+    pcSyncHostInput.value = state.pcSyncHost || '';
+    updatePcSyncStatusDisplay();
     document.getElementById('ytApiKeyRow').classList.add('hidden');
     document.getElementById('ytSearchResults').innerHTML = '';
     document.getElementById('ytSearchInput').value = '';
@@ -1312,7 +1432,13 @@
           await Promise.all(regs.map(function(r){ return r.unregister(); }));
         }
       }catch(e){ /* 取得に失敗しても、とりあえずリロードだけは試みる */ }
-      location.reload();
+      // ⚠GitHub Pagesはindex.htmlに Cache-Control: max-age=600 (10分)を
+      // 付けて配信している。Service Worker/Cache Storageを全部消しても、
+      // コレはブラウザのHTTPキャッシュ(別物)なので、素の location.reload()
+      // では10分以内のpush直後に更新してもキャッシュ済みの古い版が返って
+      // しまう不具合が実際にあった(2026-09-06実機発覚)。クエリを変えて
+      // 別URL扱いにし、HTTPキャッシュを確実に迂回する。
+      location.href = location.pathname + '?_upd=' + Date.now();
     }
 
     function startPress(){
