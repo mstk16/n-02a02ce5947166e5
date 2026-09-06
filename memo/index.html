@@ -69,6 +69,10 @@
     .video-box iframe, .video-box > div{width:100%; height:100%;}
     .chat-box{flex:1 1 auto; min-height:0; background:var(--bg);}
     .chat-box iframe{width:100%; height:100%; border:0; display:block;}
+    /* メモカード(#quickMemoCard)の移動先。動画の下・チャットの反対側に
+       常に置く(ユーザー指示2026-09-06)。チャット自体は#app側に常駐する
+       ので、コンパクトモードへ戻すときも動かすのはコレだけでいい */
+    #videoPaneMemoSlot{flex:1 1 auto; min-height:0; display:flex; flex-direction:column;}
     /* 内画面ではJSが#controlsGroupをこの下(チャットの下)へ移動してくる。
        fixed/absoluteのままだとvideoPaneのflex columnに参加できないので
        通常の(位置指定なしの)ブロックに戻す。チャット欄が狭くなるのは
@@ -85,6 +89,11 @@
        (ここに書いても後勝ちの通常ルールに上書きされて効かないため)。 */
     /* シアターモードでは動画は左ペインが本体なので、右上の小プレビューは隠す */
     .yt-float{display:none;}
+    /* #homeViewの中身(メモカード)はJSで#videoPaneMemoSlotへ移動済みなので、
+       ここは常に空。.view{flex:1 1 auto}のままだとチャット(.chat-box)と
+       flex-growが同じ比率になり、空箱なのに縦幅を半分持って行ってしまう。
+       IDセレクタで無印.viewより確実に上書きし、チャットへ幅を譲る */
+    #homeView{flex:0 0 auto; min-height:0;}
     /* フローティングキーボードが出る側に応じて、メモとチャット(動画)の左右を
        入れ替えられるように(⚙設定から切替)。DOM順は変えずflexのorderだけ動かす。
        各要素は自分自身にflex-basisを持つ(上記)ので、orderで位置を動かしても
@@ -164,6 +173,7 @@
      #homeViewがflex-columnなので、このカードがflex:1で縦幅を全部吸う */
   #homeView{flex:1 1 auto; min-height:0;}
   .quick-memo-card{flex:1 1 auto; display:flex; flex-direction:column; min-height:0;}
+  .quick-memo-card.hidden{display:none;}
   .quick-memo-card textarea{
     flex:1 1 auto; width:100%; height:100%; background:var(--panel); border:1px solid var(--border); color:var(--text);
     border-radius:14px; padding:14px; font-size:16px; line-height:1.6; font-family:inherit; resize:none;
@@ -383,19 +393,29 @@
 <div id="root">
 <div id="videoPane">
   <div class="video-box"><div id="ytPlayerHostBig"></div></div>
-  <div class="chat-box" id="ytChatWrap"></div>
-  <!-- 内画面(シアターモード)ではここに#controlsGroupが移動してくる(JS側で制御)。
+  <!-- 内画面(シアターモード)ではJSが#quickMemoCardを#appからここへ移動する
+       (ユーザー指示2026-09-06: 動画は右上のまま、チャットとメモの位置を
+       入れ替えたい)。チャット自体は常に#appChatSlot側に置くので、コレは
+       メモカードの移動先スロットだけでいい */ -->
+  <div id="videoPaneMemoSlot"></div>
+  <!-- 内画面ではここに#controlsGroupが移動してくる(JS側で制御)。
        チャットの下に操作を置きたい、というユーザー指示(2026-09-06)への対応 -->
 </div>
 <div id="app">
+
+  <!-- チャットは常にここ(#app側)に置く。内画面(シアターモード)でだけ
+       renderChatEmbed()が中身を埋める(コンパクトモードでは空のまま=
+       どこに置いても見た目に影響しないので、コンパクト時の移動は不要) -->
+  <div class="chat-box" id="ytChatWrap"></div>
 
   <!-- リンク中の動画プレビュー(右上に小さく浮かせるだけ。再生を止めないよう常にDOM上に存在させる) -->
   <div class="yt-float hidden" id="ytFloatBadge"><div id="ytPlayerHost"></div></div>
 
   <!-- ホーム(記録)画面。1配信=1つの連続テキスト。🕐は今のカーソル位置に
-       時刻を挿入するだけ(タグ挿入と同じ仕組み)。一覧・個別カードは持たない。 -->
+       時刻を挿入するだけ(タグ挿入と同じ仕組み)。一覧・個別カードは持たない。
+       内画面ではJSがコレを#videoPaneMemoSlotへ移動する。 -->
   <main class="view" id="homeView">
-    <div class="quick-memo-card">
+    <div class="quick-memo-card" id="quickMemoCard">
       <textarea id="quickMemoText" placeholder="ここに自由に書きながら見て、下のタグでテキスト挿入・右下のタイムスタンプで今の時刻を挿入"></textarea>
     </div>
   </main>
@@ -689,14 +709,25 @@
   // 狭くなってもいいから、タップして使う物は画面右のチャットの下に置きたい)。
   function relocateControlsForMode(){
     var group = document.getElementById('controlsGroup');
-    if(!group) return;
+    var memoCard = document.getElementById('quickMemoCard');
+    var memoSlot = document.getElementById('videoPaneMemoSlot');
+    var homeView = document.getElementById('homeView');
     if(isTheaterMode()){
-      var videoPane = document.getElementById('videoPane');
-      if(group.parentElement !== videoPane) videoPane.appendChild(group);
+      // メモカードを動画の下(チャットの反対側)へ、操作一式をその下へ
+      // (ユーザー指示2026-09-06: 動画は右上のまま、チャットとメモを入れ替えたい。
+      // チャット自体は常に#app側に常駐しているので動かすのはメモカードだけでいい)
+      if(memoCard && memoSlot && memoCard.parentElement !== memoSlot) memoSlot.appendChild(memoCard);
+      if(group){
+        var videoPane = document.getElementById('videoPane');
+        if(group.parentElement !== videoPane) videoPane.appendChild(group);
+      }
     } else {
-      var anchor = document.getElementById('controlsHomeAnchor');
-      if(anchor && group.previousElementSibling !== anchor){
-        anchor.parentElement.insertBefore(group, anchor.nextSibling);
+      if(memoCard && homeView && memoCard.parentElement !== homeView) homeView.appendChild(memoCard);
+      if(group){
+        var anchor = document.getElementById('controlsHomeAnchor');
+        if(anchor && group.previousElementSibling !== anchor){
+          anchor.parentElement.insertBefore(group, anchor.nextSibling);
+        }
       }
     }
   }
@@ -1130,6 +1161,9 @@
     document.getElementById('recordBtn').classList.toggle('hidden', name!=='home');
     document.getElementById('quickTagsWrap').classList.toggle('hidden', name!=='home');
     document.getElementById('quickAddBar').classList.toggle('hidden', name!=='home');
+    // シアターモードでは#quickMemoCardが#homeViewの外(#videoPaneMemoSlot)に
+    // 出ているため、homeViewの.hidden切替だけでは連動しない。明示的に揃える
+    document.getElementById('quickMemoCard').classList.toggle('hidden', name!=='home');
     if(name!=='home') document.getElementById('quickTagsWrap').innerHTML = '';
     if(name==='home') renderHome();
     if(name==='history') renderHistory();
