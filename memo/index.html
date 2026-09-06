@@ -49,7 +49,10 @@
      動かしたのは誤りだった。700pxへ戻す。閾値を変える場合は
      必ず実際の使い方をユーザーに確認してから変えること。 */
   @media (min-width:700px){
-    #root{display:grid; grid-template-columns:1.15fr 1fr; height:100dvh;}
+    /* 元は動画側1.15fr:メモ側1fr(動画優先)だったが、クイック追加バー等の
+       入力欄が増えてメモ側が窮屈という指摘(2026-09-06)を受け、メモ側を
+       広くする比率に変更する */
+    #root{display:grid; grid-template-columns:0.85fr 1.15fr; height:100dvh;}
     #videoPane{
       display:flex; flex-direction:column; height:100dvh; min-width:0;
       border-right:1px solid var(--border); background:#000;
@@ -58,7 +61,9 @@
     .video-box iframe, .video-box > div{width:100%; height:100%;}
     .chat-box{flex:1 1 auto; min-height:0; background:var(--bg);}
     .chat-box iframe{width:100%; height:100%; border:0; display:block;}
-    #app{max-width:none; margin:0;}
+    /* #appのmax-width解除は、後段の#app{max-width:560px}(通常時ルール)より
+       ソース順で後にある@media(min-width:700px)ブロックの方に書いてある
+       (ここに書いても後勝ちの通常ルールに上書きされて効かないため)。 */
     /* シアターモードでは動画は左ペインが本体なので、右上の小プレビューは隠す */
     .yt-float{display:none;}
     /* フローティングキーボードが出る側に応じて、メモとチャット(動画)の左右を
@@ -292,8 +297,18 @@
   /* シアターモードでは#appが右ペインだけになるので、fixed系のUIも
      画面全体ではなく#app基準(position:relative)に収める */
   @media (min-width:700px){
+    /* ⚠#app{max-width:560px}という通常時ルールがコレより後(ソース順で下)に
+       あるため、同じ詳細度では後勝ちでこの上書きが無視され、シアターモードでも
+       #appが560px上限のまま伸びずグリッド列の中で狭く縮んでいた
+       (2026-09-06発覚「メモ画面が狭すぎ」の真因。列の比率だけ直しても
+       この上限に阻まれて効かなかった)。ここ(通常#appルールより後)に
+       書くことで確実に上書きする */
+    #app{max-width:none; margin:0;}
     .action-bar, .tag-bar, .quick-add-bar, .toast{position:absolute;}
     .action-bar{max-width:none;}
+    /* 内画面(Z Fold展開等の広い画面)では🕐が左端・他が右端に離れていると
+       親指移動が大きくて押しにくい。ユーザー指示で全部右側に寄せる */
+    .action-bar{justify-content:flex-end;}
   }
 
   .yt-api-key-row.hidden{display:none;}
@@ -1020,26 +1035,18 @@
     });
   }
 
-  // カーソル位置にテキストを挿入して、input発火まで面倒を見る共通処理。
-  // タグ挿入・タイムスタンプ挿入の両方がコレを使う。
-  function insertAtCursor(text, cursorOffset){
-    var el = quickMemoTextEl;
-    el.focus();
-    var start = el.selectionStart != null ? el.selectionStart : el.value.length;
-    var end = el.selectionEnd != null ? el.selectionEnd : el.value.length;
-    el.value = el.value.slice(0, start) + text + el.value.slice(end);
-    var cursorPos = start + (cursorOffset != null ? cursorOffset : text.length);
-    el.setSelectionRange(cursorPos, cursorPos);
-    // .valueへの直接代入はinputイベントが飛ばないため、明示的にinputを発火させて
-    // テキストエリアのinputリスナー(保存処理)に一本化する。
-    el.dispatchEvent(new Event('input', {bubbles:true}));
-  }
-
-  // タグボタン＝メモ欄のカーソル位置にテキストを挿入する。
+  // タグ(スタンプ)ボタン＝押した瞬間のタイムスタンプ付きで末尾に追記する
+  // (🕐・クイック追加バーと同じ「常に末尾へ」方式。ユーザー指示:
+  // スタンプを押したときも同時にタイムスタンプを記録してほしい)。
   // "◆◇"だけは中身が空のテンプレートなので、◆と◇の間にカーソルを置いて
-  // そのまま打ち込める状態にする。それ以外は挿入したテキストの直後にカーソルを置く。
+  // そのまま打ち込める状態にする。それ以外は追記した直後にカーソルを置く。
   function insertTagTemplate(tagName){
-    insertAtCursor(tagName, tagName === '◆◇' ? 1 : undefined);
+    var s = ensureActiveSession();
+    var t = currentElapsedSec(s);
+    appendLine(formatElapsed(t) + ' ' + tagName);
+    var el = quickMemoTextEl;
+    if(tagName === '◆◇') el.setSelectionRange(el.value.length-1, el.value.length-1);
+    el.focus();
   }
 
   // 常に末尾へ追記する共通処理(ユーザー指示: 自分でスクロールしなくていいように)。
