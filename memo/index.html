@@ -175,10 +175,16 @@
     border:1px solid var(--border); background:var(--panel); color:var(--text);
     padding:9px 14px; border-radius:999px; font-size:13.5px; cursor:pointer;
     display:flex; align-items:center; gap:4px;
+    /* 長押しでその場編集にしたいので、端末側のテキスト選択/コピーメニューが
+       先に割り込まないようにする(2026-09-07: 長押しで端末デフォルトの
+       メニューが出て編集できないという指摘で追加) */
+    -webkit-user-select:none; user-select:none; -webkit-touch-callout:none;
+    touch-action:manipulation;
   }
   .chip:active{background:var(--panel2); transform:scale(.97);}
   .chip.add{color:var(--sub); border-style:dashed;}
   .chip.selected{background:var(--accent-dim); border-color:var(--accent); color:#fff;}
+  .chip.pressing{background:var(--accent-dim); border-color:var(--accent);}
 
   .memo-list{display:flex; flex-direction:column; gap:8px;}
   .memo-item{
@@ -1203,7 +1209,54 @@
   // 連携中のYouTube動画の音声/再生が乱れることがある(2026-09-07実機報告)。
   // クイック追加バーと同じ「その場でinput→Enter/ボタンで確定」に統一する。
   var addingQuickTag = false;
+  var renamingQuickTagIdx = -1;
+  // ワードボタンの長押し→その場で名前編集。⚠ここもprompt()は使わない
+  // (動画の映像/音声を止めないよう、上のクイック追加バー・+追加チップと
+  // 同じinput方式に統一する。2026-09-07ユーザー指示)。
+  var QUICK_TAG_LONG_PRESS_MS = 500;
   function renderQuickTags(container, onTap){
+    if(renamingQuickTagIdx>=0){
+      var set0 = activeTagSet();
+      var oldName = set0.tags[renamingQuickTagIdx];
+      if(oldName===undefined){ renamingQuickTagIdx = -1; renderQuickTags(container, onTap); return; }
+      var html0 = activeTagSet().tags.map(function(t, i){
+        if(i===renamingQuickTagIdx){
+          return '<input type="text" id="renameQuickTagInline" value="'+escapeAttr(t)+'" style="flex:1 1 auto; min-width:100px; padding:9px 12px; border-radius:999px; font-size:13.5px;">' +
+            '<button type="button" class="chip" id="renameQuickTagConfirm">確定</button>' +
+            '<button type="button" class="chip" id="renameQuickTagCancel">×</button>';
+        }
+        return '<button class="chip" data-tag="'+escapeAttr(t)+'">'+escapeHtml(t)+'</button>';
+      }).join('');
+      html0 += '<button type="button" class="chip add" id="quickAddTagChip">＋追加</button>';
+      container.innerHTML = html0;
+      var rInput = document.getElementById('renameQuickTagInline');
+      function commitRename(){
+        var t = rInput.value.trim();
+        var set = activeTagSet();
+        if(t && set.tags.indexOf(t)===-1){ set.tags[renamingQuickTagIdx] = t; save(); }
+        renamingQuickTagIdx = -1;
+        renderQuickTags(container, onTap);
+      }
+      function cancelRename(){ renamingQuickTagIdx = -1; renderQuickTags(container, onTap); }
+      document.getElementById('renameQuickTagConfirm').addEventListener('click', commitRename);
+      document.getElementById('renameQuickTagCancel').addEventListener('click', cancelRename);
+      rInput.addEventListener('keydown', function(e){
+        if(e.key==='Enter'){ e.preventDefault(); commitRename(); }
+        if(e.key==='Escape'){ cancelRename(); }
+      });
+      rInput.focus();
+      rInput.select();
+      // 編集中でない他のチップ・+追加は普通にタップで使えるままにする
+      container.querySelectorAll('.chip[data-tag]').forEach(function(el){
+        el.addEventListener('click', function(){ onTap(el.dataset.tag); });
+      });
+      var addChip0 = document.getElementById('quickAddTagChip');
+      if(addChip0) addChip0.addEventListener('click', function(){
+        addingQuickTag = true;
+        renderQuickTags(container, onTap);
+      });
+      return;
+    }
     if(addingQuickTag){
       container.innerHTML =
         '<input type="text" id="newQuickTagInline" placeholder="新しいクイックワード" style="flex:1 1 auto; min-width:100px; padding:9px 12px; border-radius:999px; font-size:13.5px;">' +
@@ -1230,13 +1283,41 @@
       input.focus();
       return;
     }
-    var html = activeTagSet().tags.map(function(t){
-      return '<button class="chip" data-tag="'+escapeAttr(t)+'">'+escapeHtml(t)+'</button>';
+    var html = activeTagSet().tags.map(function(t, i){
+      return '<button type="button" class="chip" data-tag="'+escapeAttr(t)+'" data-idx="'+i+'">'+escapeHtml(t)+'</button>';
     }).join('');
     html += '<button type="button" class="chip add" id="quickAddTagChip">＋追加</button>';
     container.innerHTML = html;
     container.querySelectorAll('.chip[data-tag]').forEach(function(el){
-      el.addEventListener('click', function(){ onTap(el.dataset.tag); });
+      // タップ=スタンプ挿入、長押し=その場で名前編集。長押しが発火した回だけ
+      // タップ側(click)を無効化する(⚙長押し更新ボタンと同じガード方式)。
+      var pressTimer = null;
+      var longPressFired = false;
+      function start(){
+        longPressFired = false;
+        clearTimeout(pressTimer);
+        el.classList.add('pressing');
+        pressTimer = setTimeout(function(){
+          longPressFired = true;
+          el.classList.remove('pressing');
+          if(navigator.vibrate) navigator.vibrate(15);
+          renamingQuickTagIdx = parseInt(el.dataset.idx, 10);
+          renderQuickTags(container, onTap);
+        }, QUICK_TAG_LONG_PRESS_MS);
+      }
+      function cancelHold(){
+        clearTimeout(pressTimer);
+        el.classList.remove('pressing');
+      }
+      el.addEventListener('pointerdown', start);
+      el.addEventListener('pointerup', cancelHold);
+      el.addEventListener('pointerleave', cancelHold);
+      el.addEventListener('pointercancel', cancelHold);
+      el.addEventListener('contextmenu', function(e){ e.preventDefault(); });
+      el.addEventListener('click', function(e){
+        if(longPressFired){ longPressFired = false; e.preventDefault(); return; }
+        onTap(el.dataset.tag);
+      });
     });
     var addChip = document.getElementById('quickAddTagChip');
     if(addChip) addChip.addEventListener('click', function(){
