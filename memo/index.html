@@ -82,7 +82,9 @@
        ⚠ID+子孫クラスのセレクタなので、無印の.tag-bar{position:fixed}等より
        詳細度で確実に勝つ(ソース順に依存しない) */
     #videoPane{ overflow:hidden; }
-    #videoPane #controlsGroup{ flex:0 0 auto; }
+    #videoPane #controlsGroup{
+      flex:0 0 auto; position:static; max-width:none; margin:0; left:auto; right:auto; bottom:auto;
+    }
     #videoPane .tag-bar, #videoPane .quick-add-bar, #videoPane .action-bar{
       position:static; max-width:none; margin:0; left:auto; right:auto; bottom:auto;
     }
@@ -108,7 +110,11 @@
   .iconbtn:active{background:var(--panel2);}
   .iconbtn.pressing{background:var(--accent-dim); color:var(--accent);}
 
-  .view{flex:1 1 auto; overflow-y:auto; padding:var(--safe-t) var(--safe-r) calc(212px + var(--safe-b)) var(--safe-l); display:flex; flex-direction:column;}
+  /* 下の余白は#controlsGroup(タグ行+クイック追加バー+下帯)の実際の高さに
+     追従させる(JSが--controls-hを更新する)。ゲストのセリフ欄の表示/非表示で
+     高さが変わるため、決め打ちpxだと隠れる/余りすぎるどちらかになる
+     (2026-09-07)。212pxは--controls-h未設定時(JS実行前の一瞬)だけの保険値。 */
+  .view{flex:1 1 auto; overflow-y:auto; padding:var(--safe-t) var(--safe-r) calc(var(--controls-h, 212px) + var(--safe-b)) var(--safe-l); display:flex; flex-direction:column;}
   .view.hidden{display:none;}
   /* 常時見えるスクロールバー。Chromium系では効くが、モバイルのタッチスクロールでは
      OS側が自動で細い一時表示バーに差し替えてしまい、反映されないコトがある */
@@ -180,6 +186,13 @@
        メニューが出て編集できないという指摘で追加) */
     -webkit-user-select:none; user-select:none; -webkit-touch-callout:none;
     touch-action:manipulation;
+    /* ⚠親(.tag-bar)がflexでshrink可能なままだと、横幅が足りないときに
+       チップ自体が潰れて文字が1文字ずつ縦に折り返り、チップの背が
+       140px近くまで伸びて下のテキストボックスを覆い隠すバグになる
+       (2026-09-07発覚: 「ワードカードがテキストボックスとメモボックスの間に
+       入ってない」と報告されたが、実際は折り返りで縦に膨らんで下の
+       テキストボックスへ覆いかぶさっていた)。1行のまま横スクロールさせる。 */
+    white-space:nowrap; flex:0 0 auto;
   }
   .chip:active{background:var(--panel2); transform:scale(.97);}
   .chip.add{color:var(--sub); border-style:dashed;}
@@ -205,11 +218,21 @@
   }
   .empty-state{color:var(--sub); font-size:13.5px; text-align:center; padding:40px 20px; line-height:1.8;}
 
+  /* タグ列・クイック追加バー・下帯(action-bar)の3つをまとめて画面下に固定する
+     ラッパー。以前は3つそれぞれが個別にposition:fixed+bottomの決め打ち数値
+     (0/56px/112px)で積み上げていたが、ゲストのセリフ欄を表示/非表示できる
+     ようにした結果クイック追加バーの高さが可変になり、決め打ち数値の前提が
+     崩れる(2026-09-07)。#controlsGroup自体を1つのfixed+flexカラムにして、
+     中身はDOM順(タグ→クイック追加→下帯)に自然に積み上げることで、高さが
+     変わっても崩れないようにする。DOM順がそのまま見た目の並びになる。 */
+  #controlsGroup{
+    position:fixed; left:0; right:0; bottom:0; z-index:18;
+    max-width:560px; margin:0 auto;
+    display:flex; flex-direction:column;
+  }
   /* 操作は全部この下帯1本に集約。タグ列だけ横スクロールさせ、記録・ナビ・設定は
      常に見える位置(左端/右端)に固定する */
   .action-bar{
-    position:fixed; left:0; right:0; bottom:0; z-index:20;
-    max-width:560px; margin:0 auto;
     display:flex; align-items:center; justify-content:space-between; gap:8px;
     padding:8px var(--safe-r) calc(8px + var(--safe-b)) var(--safe-l);
     border-top:1px solid var(--border); background:var(--bg);
@@ -229,10 +252,8 @@
   .navchip.active{color:var(--accent);}
   .navchip:active, .iconbtn:active{background:var(--panel2);}
 
-  /* タグ専用の行。下帯(action-bar)のさらに上に重ねる */
+  /* タグ専用の行。#controlsGroup内でクイック追加バーより上(メモ側)に来る */
   .tag-bar{
-    position:fixed; left:0; right:0; bottom:calc(56px + var(--safe-b)); z-index:19;
-    max-width:560px; margin:0 auto;
     display:flex; gap:8px; overflow-x:auto; -webkit-overflow-scrolling:touch;
     padding:8px var(--safe-r) 8px var(--safe-l); border-top:1px solid var(--border); background:var(--bg);
   }
@@ -242,15 +263,14 @@
   /* PC版(ymmp_gui_new.py)の配信メモ入力欄と同じ考え方: 1行入力してEnter/追加で
      タイムスタンプ付きの1行として末尾に追記され、欄はクリアされて次を打てる。
      連続テキスト(quickMemoText)への「もう1つの書き方」として共存させる。
-     tag-barのさらに上に重ねる */
+     #controlsGroup内でタグ行の下・下帯(action-bar)の上に来る */
   .quick-add-bar{
-    position:fixed; left:0; right:0; bottom:calc(112px + var(--safe-b)); z-index:18;
-    max-width:560px; margin:0 auto;
     display:flex; flex-direction:column; gap:6px;
     padding:8px var(--safe-r) 6px var(--safe-l); border-top:1px solid var(--border); background:var(--bg);
   }
   .quick-add-bar.hidden{display:none;}
   .quick-add-row{display:flex; gap:6px; align-items:center;}
+  .quick-add-row.hidden{display:none;}
   .quick-add-row input{
     flex:1 1 auto; background:var(--panel2); border:1px solid var(--accent); color:var(--text);
     border-radius:10px; padding:9px 12px; font-size:14px; font-family:inherit;
@@ -487,6 +507,13 @@
     </label>
     <div class="session-hint" style="margin-top:4px;">フローティングキーボードが出る側にメモが隠れる場合、反対側に逃がすために使う。</div>
 
+    <div class="field-label">入力欄</div>
+    <label class="switch-row" for="showGuestInputToggle">
+      <span>ゲストのセリフ欄を表示する</span>
+      <input type="checkbox" id="showGuestInputToggle">
+    </label>
+    <div class="session-hint" style="margin-top:4px;">既定では非表示（ゲストがいない配信のときに欄を減らすため）。</div>
+
     <div class="field-label">PC連携（任意・自宅PCの配信メモ拡張機能へ差分を自動送信）</div>
     <div class="add-tag-row">
       <input type="text" id="pcSyncKeyInput" placeholder="PC連携キー（PC側config.jsonと同じ文字列）">
@@ -566,6 +593,7 @@
       activeTagSetId: 'default',
       ytApiKey: '',
       swapPanes: false,
+      showGuestInput: false,
       pcSyncKey: '',
       pcSyncHost: '',
       pcLastSyncAt: null
@@ -1443,6 +1471,7 @@
     var s = activeSession();
     document.getElementById('endSessionBtn').style.display = s ? '' : 'none';
     document.getElementById('swapPanesToggle').checked = !!state.swapPanes;
+    document.getElementById('showGuestInputToggle').checked = !!state.showGuestInput;
     updateTimerDisplay();
     renderTagSetList();
     renderTagManageList();
@@ -1612,6 +1641,37 @@
     state.swapPanes = this.checked;
     save();
     applySwapPanes();
+  });
+
+  // ---------- ゲストのセリフ欄の表示/非表示(既定は非表示) ----------
+  function applyShowGuestInput(){
+    var row = document.querySelector('.quick-add-row.guest');
+    if(row) row.classList.toggle('hidden', !state.showGuestInput);
+  }
+  applyShowGuestInput();
+
+  // #controlsGroup(タグ行+クイック追加バー+下帯)の実際の高さを追従させ、
+  // .viewの下余白(--controls-h)に反映する。ゲストのセリフ欄の表示/非表示で
+  // 高さが変わっても、決め打ちpxのように隠れたり余りすぎたりしないため
+  // (2026-09-07)。ResizeObserverだけに頼らず、高さが変わりうる操作の直後にも
+  // 明示的に呼ぶ(環境によってはResizeObserverの通知が来ないコトがあるため
+  // 二重に保険をかける)。
+  function updateControlsHeightVar(){
+    var group = document.getElementById('controlsGroup');
+    if(group) document.documentElement.style.setProperty('--controls-h', group.offsetHeight + 'px');
+  }
+  updateControlsHeightVar();
+  (function(){
+    var group = document.getElementById('controlsGroup');
+    if(!group || !('ResizeObserver' in window)) return;
+    var ro = new ResizeObserver(updateControlsHeightVar);
+    ro.observe(group);
+  })();
+  document.getElementById('showGuestInputToggle').addEventListener('change', function(){
+    state.showGuestInput = this.checked;
+    save();
+    applyShowGuestInput();
+    updateControlsHeightVar();
   });
 
   document.getElementById('recordBtn').addEventListener('click', stampQuickMemo);
