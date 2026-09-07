@@ -69,7 +69,11 @@
        空のチャット欄がflex:1で場所を占領して#homeViewを潰さないよう、
        動画連携中(#root.video-split)だけ広がるようにする(2026-09-07発覚:
        動画未連携+広い画面で#homeViewがほぼ0高さに潰れるバグの原因) */
-    #root.video-split .chat-box{flex:1 1 auto; min-height:0; background:var(--bg);}
+    /* ⚠YouTubeのライブチャット埋め込み(iframe内部)は横幅が狭いと右端が
+       欠けたりスーパーチャット一覧パネルが崩れたりする(2026-09-07報告)。
+       #appの取り分(0.85fr)が狭い画面だと不足しがちなので下限を確保する。
+       videoPane側はmin-width:0のまま縮んでよい(動画は狭くても機能は保てる) */
+    #root.video-split .chat-box{flex:1 1 auto; min-height:0; min-width:340px; background:var(--bg);}
     .chat-box iframe{width:100%; height:100%; border:0; display:block;}
     /* メモカード(#quickMemoCard)の移動先。動画の下・チャットの反対側に
        常に置く(ユーザー指示2026-09-06)。チャット自体は#app側に常駐する
@@ -103,6 +107,22 @@
     max-width:560px; margin:0 auto; height:100dvh;
     display:flex; flex-direction:column; position:relative;
   }
+  /* チャット埋め込み(iframe内部=youtube.com側)のスーパーチャット一覧等から
+     戻れなくなったときの避難ボタン。#ytChatWrapの右上に重ねて表示する
+     (2026-09-07報告: 「チャットの右が途切れてて、スパチャを押したら戻れない」
+     への対応)。iframeの中身はyoutube.com側のページなので直接操作できず、
+     iframeごと読み込み直して通常のチャット表示に戻す。既定は非表示
+     (JSがvideo-split中だけ.hiddenを外す)。position:absoluteの基準は
+     position:relativeな#app */
+  .chat-reload-btn{
+    display:none;
+    position:absolute; top:8px; right:8px; z-index:5;
+    width:32px; height:32px; border-radius:999px; border:1px solid var(--border);
+    background:rgba(20,22,28,.85); color:var(--text); font-size:16px; line-height:1;
+    align-items:center; justify-content:center; cursor:pointer;
+  }
+  .chat-reload-btn:active{background:var(--panel2);}
+  .chat-reload-btn:not(.hidden){display:flex;}
   .iconbtn{
     background:none; border:none; color:var(--sub); font-size:20px;
     padding:6px 8px; border-radius:8px; cursor:pointer;
@@ -431,6 +451,13 @@
        renderChatEmbed()が中身を埋める(コンパクトモードでは空のまま=
        どこに置いても見た目に影響しないので、コンパクト時の移動は不要) -->
   <div class="chat-box" id="ytChatWrap"></div>
+  <!-- スーパーチャット一覧等、YouTube側のチャット埋め込み内部画面から
+       戻れなくなったときの避難ボタン(2026-09-07報告)。iframeの中身は
+       youtube.com側のページなのでコチラから直接操作できないため、
+       iframeごと読み込み直して通常のチャット表示に戻す。
+       #ytChatWrapのinnerHTMLはrenderChatEmbed()が丸ごと差し替えるので、
+       ボタンはその外(#appの直下)に置いて#ytChatWrapへ重ねて表示する -->
+  <button type="button" class="chat-reload-btn hidden" id="chatReloadBtn" aria-label="チャットを再読み込み">↺</button>
 
   <!-- ホーム(記録)画面。1配信=1つの連続テキスト。🕐は今のカーソル位置に
        時刻を挿入するだけ(タグ挿入と同じ仕組み)。一覧・個別カードは持たない。
@@ -892,20 +919,32 @@
 
   // シアターモードの時だけYouTubeのライブチャットを埋め込む(通常モードでは場所がないので出さない)
   var lastChatVideoId = null;
+  function insertChatIframe(wrap, videoId){
+    var src = 'https://www.youtube.com/live_chat?v=' + encodeURIComponent(videoId) +
+      '&embed_domain=' + encodeURIComponent(location.hostname) + '&dark_theme=1';
+    wrap.innerHTML = '<iframe src="'+src+'" allow="autoplay"></iframe>';
+  }
   function renderChatEmbed(session){
     var wrap = document.getElementById('ytChatWrap');
+    var reloadBtn = document.getElementById('chatReloadBtn');
     if(!wrap) return;
     var wantId = (isTheaterMode() && session && session.ytVideoId) ? session.ytVideoId : null;
+    if(reloadBtn) reloadBtn.classList.toggle('hidden', !wantId);
     if(wantId === lastChatVideoId) return;
     lastChatVideoId = wantId;
     if(!wantId){
       wrap.innerHTML = '';
       return;
     }
-    var src = 'https://www.youtube.com/live_chat?v=' + encodeURIComponent(wantId) +
-      '&embed_domain=' + encodeURIComponent(location.hostname) + '&dark_theme=1';
-    wrap.innerHTML = '<iframe src="'+src+'" allow="autoplay"></iframe>';
+    insertChatIframe(wrap, wantId);
   }
+  // スーパーチャット一覧等、youtube.com側のiframe内部画面から戻れなくなった
+  // ときの避難ボタン。iframeを丸ごと作り直して通常のチャット表示に戻す
+  // (2026-09-07報告への対応)。
+  document.getElementById('chatReloadBtn').addEventListener('click', function(){
+    var wrap = document.getElementById('ytChatWrap');
+    if(wrap && lastChatVideoId) insertChatIframe(wrap, lastChatVideoId);
+  });
 
   document.getElementById('ytLinkBtn').addEventListener('click', function(){
     var raw = document.getElementById('ytUrlInput').value;
