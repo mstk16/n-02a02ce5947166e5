@@ -75,6 +75,14 @@
        videoPane側はmin-width:0のまま縮んでよい(動画は狭くても機能は保てる) */
     #root.video-split .chat-box{flex:1 1 auto; min-height:0; min-width:340px; background:var(--bg);}
     .chat-box iframe{width:100%; height:100%; border:0; display:block;}
+    /* ライブチャットが無効な動画のとき、代わりに表示する通常コメントの一覧
+       (2026-09-07指示)。#ytChatWrap自体をスクロール領域にする */
+    .chat-box{overflow-y:auto;}
+    .yt-comments-empty{color:var(--sub); font-size:13px; text-align:center; padding:24px 16px; line-height:1.7;}
+    .yt-comments-list{display:flex; flex-direction:column; gap:10px; padding:10px;}
+    .yt-comment-item{background:var(--panel); border:1px solid var(--border); border-radius:10px; padding:8px 10px;}
+    .yt-comment-author{font-size:12px; font-weight:700; color:var(--accent); margin-bottom:2px;}
+    .yt-comment-text{font-size:13px; line-height:1.6; word-break:break-word; white-space:pre-wrap;}
     /* メモカード(#quickMemoCard)の移動先。動画の下・チャットの反対側に
        常に置く(ユーザー指示2026-09-06)。チャット自体は#app側に常駐する
        ので、コンパクトモードへ戻すときも動かすのはコレだけでいい */
@@ -181,8 +189,21 @@
   .yt-status{font-size:12.5px; color:var(--accent); font-weight:700;}
   .yt-offset-row{display:flex; gap:6px;}
   .yt-offset-row .adjust{padding:6px 10px; font-size:12px;}
-  .yt-settings{margin-top:6px;}
+  /* 動画リンクは他の設定項目より使う頻度・重要度が高いので、枠で囲って
+     目立たせる(2026-09-07指示)。未連携時(#ytLinkSection)・連携済み時
+     (#ytSettingsBox)のどちらも対象(状態によって表示が入れ替わるだけで、
+     同じ「動画連携」という1つの機能なので両方を強調する) */
+  #ytLinkSection, .yt-settings{
+    border:1.5px solid var(--accent); border-radius:14px;
+    background:var(--accent-dim); padding:12px; margin-top:8px;
+  }
+  #ytLinkSection .field-label, .yt-settings .field-label{ color:var(--accent); margin-top:0; }
   .yt-settings.hidden{display:none;}
+  /* ⚠#ytLinkSectionには元々.hiddenを隠すCSSルールが無く、連携済み中も
+     未連携用フォーム(#ytLinkSection)と連携状況ボックス(#ytSettingsBox)が
+     両方同時に表示されたままになっていた(2026-09-07発覚: このセクションを
+     枠で囲って目立たせたら重なって見えて気付いた・元からあった不具合)。 */
+  #ytLinkSection.hidden{display:none;}
   .yt-settings .yt-status{margin-bottom:8px;}
   .yt-settings .yt-offset-row{margin-bottom:8px;}
 
@@ -841,7 +862,11 @@
     try{
       ytPlayer = new YT.Player(inner, {
         videoId: session.ytVideoId,
-        playerVars: { autoplay: 1, mute: 1, playsinline: 1, controls: 1, rel: 0 },
+        // ⚠2026-09-07: 最初からミュートなのをやめてほしいという指示。
+        // ブラウザ/WebViewの自動再生ポリシー次第では音声ありの自動再生が
+        // ブロックされ、その場合は再生ボタンを押すまで一時停止のままに
+        // なりうる(コチラで制御できる範囲外)。
+        playerVars: { autoplay: 1, mute: 0, playsinline: 1, controls: 1, rel: 0 },
         events: {
           onReady: function(){
             ytPlayerSessionId = session.id;
@@ -919,31 +944,114 @@
 
   // シアターモードの時だけYouTubeのライブチャットを埋め込む(通常モードでは場所がないので出さない)
   var lastChatVideoId = null;
+  var lastChatMode = null; // 'chat' | 'comments' | null
   function insertChatIframe(wrap, videoId){
     var src = 'https://www.youtube.com/live_chat?v=' + encodeURIComponent(videoId) +
       '&embed_domain=' + encodeURIComponent(location.hostname) + '&dark_theme=1';
     wrap.innerHTML = '<iframe src="'+src+'" allow="autoplay"></iframe>';
+  }
+  // ライブ配信でない(≒ライブチャットが無効な)動画かどうかをYouTube Data API
+  // で確認する。公式のコメント埋め込み部品は存在しないため、無効なときは
+  // commentThreads APIで通常のコメントを取得して代わりに一覧表示する
+  // (2026-09-07指示: 「チャット欄が無効の場合は、コメントを表示してほしい」)。
+  // ⚠APIキー未設定のときはライブ判定もコメント取得もできないので、
+  // 従来どおりチャット埋め込みを試みるだけに留める(無効な動画だとYouTube側の
+  // 「このライブストリームでは無効です」表示のままになる=既知の制約)。
+  function fetchYtJson(url){
+    return fetch(url).then(function(res){ return res.json(); });
+  }
+  function loadAndRenderComments(wrap, videoId, apiKey){
+    var url = 'https://www.googleapis.com/youtube/v3/commentThreads?part=snippet&videoId=' +
+      encodeURIComponent(videoId) + '&maxResults=25&order=relevance&textFormat=plainText&key=' + encodeURIComponent(apiKey);
+    fetchYtJson(url).then(function(data){
+      if(videoId !== lastChatVideoId || lastChatMode !== 'comments') return; // 別動画に切替済みなら破棄
+      if(data.error){
+        var reason = data.error.errors && data.error.errors[0] && data.error.errors[0].reason;
+        var msg = reason==='commentsDisabled' ? 'この動画はコメントが無効になっています'
+          : reason==='quotaExceeded' ? 'YouTube APIの利用上限に達しました'
+          : 'コメントを取得できませんでした';
+        wrap.innerHTML = '<div class="yt-comments-empty">'+escapeHtml(msg)+'</div>';
+        return;
+      }
+      var items = data.items || [];
+      if(!items.length){
+        wrap.innerHTML = '<div class="yt-comments-empty">コメントはまだありません</div>';
+        return;
+      }
+      var html = '<div class="yt-comments-list">' + items.map(function(item){
+        var sn = item.snippet.topLevelComment.snippet;
+        return '<div class="yt-comment-item">' +
+          '<div class="yt-comment-author">'+escapeHtml(sn.authorDisplayName)+'</div>' +
+          '<div class="yt-comment-text">'+escapeHtml(sn.textDisplay)+'</div>' +
+          '</div>';
+      }).join('') + '</div>';
+      wrap.innerHTML = html;
+    }).catch(function(){
+      if(videoId !== lastChatVideoId || lastChatMode !== 'comments') return;
+      wrap.innerHTML = '<div class="yt-comments-empty">コメントを取得できませんでした</div>';
+    });
   }
   function renderChatEmbed(session){
     var wrap = document.getElementById('ytChatWrap');
     var reloadBtn = document.getElementById('chatReloadBtn');
     if(!wrap) return;
     var wantId = (isTheaterMode() && session && session.ytVideoId) ? session.ytVideoId : null;
-    if(reloadBtn) reloadBtn.classList.toggle('hidden', !wantId);
-    if(wantId === lastChatVideoId) return;
-    lastChatVideoId = wantId;
     if(!wantId){
+      if(reloadBtn) reloadBtn.classList.add('hidden');
+      lastChatVideoId = null; lastChatMode = null;
       wrap.innerHTML = '';
       return;
     }
-    insertChatIframe(wrap, wantId);
+    if(wantId === lastChatVideoId) return;
+    lastChatVideoId = wantId;
+    if(!state.ytApiKey){
+      lastChatMode = 'chat';
+      if(reloadBtn) reloadBtn.classList.remove('hidden');
+      insertChatIframe(wrap, wantId);
+      return;
+    }
+    lastChatMode = null; // 判定中
+    if(reloadBtn) reloadBtn.classList.add('hidden');
+    wrap.innerHTML = '<div class="yt-comments-empty">チャットの状態を確認中…</div>';
+    var apiKey = state.ytApiKey;
+    fetchYtJson('https://www.googleapis.com/youtube/v3/videos?part=snippet&id=' + encodeURIComponent(wantId) + '&key=' + encodeURIComponent(apiKey))
+      .then(function(data){
+        if(wantId !== lastChatVideoId) return; // 判定中に別動画へ切替済み
+        if(data.error){
+          // APIキーが無効/期限切れ等でライブ判定自体ができなかった場合。
+          // 「配信じゃない」と決めつけずチャット埋め込みにフォールバックする
+          // (ネットワーク失敗時と同じ扱い)
+          lastChatMode = 'chat';
+          if(reloadBtn) reloadBtn.classList.remove('hidden');
+          insertChatIframe(wrap, wantId);
+          return;
+        }
+        var item = data.items && data.items[0];
+        var liveStatus = item ? item.snippet.liveBroadcastContent : 'none';
+        if(liveStatus === 'live'){
+          lastChatMode = 'chat';
+          if(reloadBtn) reloadBtn.classList.remove('hidden');
+          insertChatIframe(wrap, wantId);
+        } else {
+          lastChatMode = 'comments';
+          loadAndRenderComments(wrap, wantId, apiKey);
+        }
+      })
+      .catch(function(){
+        if(wantId !== lastChatVideoId) return;
+        // API呼び出し自体に失敗した場合はチャット埋め込みにフォールバック
+        lastChatMode = 'chat';
+        if(reloadBtn) reloadBtn.classList.remove('hidden');
+        insertChatIframe(wrap, wantId);
+      });
   }
   // スーパーチャット一覧等、youtube.com側のiframe内部画面から戻れなくなった
   // ときの避難ボタン。iframeを丸ごと作り直して通常のチャット表示に戻す
-  // (2026-09-07報告への対応)。
+  // (2026-09-07報告への対応)。チャット表示中(lastChatMode==='chat')のときだけ
+  // ボタン自体が見えている(renderChatEmbed/loadAndRenderComments側で制御)。
   document.getElementById('chatReloadBtn').addEventListener('click', function(){
     var wrap = document.getElementById('ytChatWrap');
-    if(wrap && lastChatVideoId) insertChatIframe(wrap, lastChatVideoId);
+    if(wrap && lastChatVideoId && lastChatMode==='chat') insertChatIframe(wrap, lastChatVideoId);
   });
 
   document.getElementById('ytLinkBtn').addEventListener('click', function(){
