@@ -1217,7 +1217,37 @@
     quickMemoTextEl.scrollTop = quickMemoTextEl.scrollHeight;
   }
 
+  // ⚠prompt()は使わない。ブラウザのネイティブダイアログはJS実行を止めるため、
+  // 連携中のYouTube動画の音声/再生が乱れることがある(2026-09-07実機報告)。
+  // クイック追加バーと同じ「その場でinput→Enter/ボタンで確定」に統一する。
+  var addingQuickTag = false;
   function renderQuickTags(container, onTap){
+    if(addingQuickTag){
+      container.innerHTML =
+        '<input type="text" id="newQuickTagInline" placeholder="新しいクイックワード" style="flex:1 1 auto; min-width:100px; padding:9px 12px; border-radius:999px; font-size:13.5px;">' +
+        '<button type="button" class="chip" id="newQuickTagConfirm">追加</button>' +
+        '<button type="button" class="chip" id="newQuickTagCancel">×</button>';
+      var input = document.getElementById('newQuickTagInline');
+      function commit(){
+        var t = input.value.trim();
+        if(t){
+          var set = activeTagSet();
+          if(set.tags.indexOf(t)===-1) set.tags.push(t);
+          save();
+        }
+        addingQuickTag = false;
+        renderQuickTags(container, onTap);
+      }
+      function cancel(){ addingQuickTag = false; renderQuickTags(container, onTap); }
+      document.getElementById('newQuickTagConfirm').addEventListener('click', commit);
+      document.getElementById('newQuickTagCancel').addEventListener('click', cancel);
+      input.addEventListener('keydown', function(e){
+        if(e.key==='Enter'){ e.preventDefault(); commit(); }
+        if(e.key==='Escape'){ cancel(); }
+      });
+      input.focus();
+      return;
+    }
     var html = activeTagSet().tags.map(function(t){
       return '<button class="chip" data-tag="'+escapeAttr(t)+'">'+escapeHtml(t)+'</button>';
     }).join('');
@@ -1228,14 +1258,8 @@
     });
     var addChip = document.getElementById('quickAddTagChip');
     if(addChip) addChip.addEventListener('click', function(){
-      var t = prompt('新しいクイックワードを追加');
-      if(t===null) return;
-      t = t.trim();
-      if(!t) return;
-      var set = activeTagSet();
-      if(set.tags.indexOf(t)===-1) set.tags.push(t);
-      save();
-      renderQuickTags(quickTagsWrap, insertTagTemplate);
+      addingQuickTag = true;
+      renderQuickTags(container, onTap);
     });
   }
 
