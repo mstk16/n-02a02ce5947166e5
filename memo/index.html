@@ -39,7 +39,6 @@
     overscroll-behavior-y:none;
   }
   #root{height:100dvh;}
-  #videoPane{display:none;}
 
   /* 横長/正方形に近い広い画面(分割画面の片側など)ではシアターモードにする:
      動画+チャットを左、アプリ本体を右の2ペインにする。
@@ -65,9 +64,12 @@
       flex:1.15 1.15 0%;
       border-right:1px solid var(--border); background:#000;
     }
-    .video-box{flex:0 0 auto; aspect-ratio:16/9; background:#000;}
-    .video-box iframe, .video-box > div{width:100%; height:100%;}
-    .chat-box{flex:1 1 auto; min-height:0; background:var(--bg);}
+    .video-box{flex:0 0 auto;}
+    /* 動画が連携されていない間は#videoPane自体が非表示(.hidden)になるので、
+       空のチャット欄がflex:1で場所を占領して#homeViewを潰さないよう、
+       動画連携中(#root.video-split)だけ広がるようにする(2026-09-07発覚:
+       動画未連携+広い画面で#homeViewがほぼ0高さに潰れるバグの原因) */
+    #root.video-split .chat-box{flex:1 1 auto; min-height:0; background:var(--bg);}
     .chat-box iframe{width:100%; height:100%; border:0; display:block;}
     /* メモカード(#quickMemoCard)の移動先。動画の下・チャットの反対側に
        常に置く(ユーザー指示2026-09-06)。チャット自体は#app側に常駐する
@@ -87,8 +89,6 @@
     /* #appのmax-width解除は、後段の#app{max-width:560px}(通常時ルール)より
        ソース順で後にある@media(min-width:700px)ブロックの方に書いてある
        (ここに書いても後勝ちの通常ルールに上書きされて効かないため)。 */
-    /* シアターモードでは動画は左ペインが本体なので、右上の小プレビューは隠す */
-    .yt-float{display:none;}
     /* フローティングキーボードが出る側に応じて、メモとチャット(動画)の左右を
        入れ替えられるように(⚙設定から切替)。DOM順は変えずflexのorderだけ動かす。
        各要素は自分自身にflex-basisを持つ(上記)ので、orderで位置を動かしても
@@ -142,20 +142,16 @@
 
   .section-label{font-size:12px; color:var(--sub); margin:4px 2px 8px; font-weight:600;}
 
-  /* リンク中の小さな動画プレビュー。メモ欄を押し下げないよう、通常の流し込みに
-     参加させず右上に浮かせる固定バッジにする(非表示コンテナに入れると再生停止の
-     リスクがあるため、display:noneではなく画面外に置かない形を選んでいる)。 */
-  .yt-float{
-    position:fixed; top:var(--safe-t); right:var(--safe-r); z-index:8;
-    /* 折りたたみ時(コンパクト表示)はコレが唯一の映像。56pxだと存在確認用の
-       バッジにしかならず「見えない」ため、実際に視聴できる大きさに広げる
-       (2026-09-05実機報告)。40vw基準・上限240pxで、メモ欄の書く余白は残す */
-    width:min(40vw, 240px); aspect-ratio:16/9; border-radius:8px; overflow:hidden;
-    background:#000; box-shadow:0 2px 10px rgba(0,0,0,.5); cursor:pointer;
-    border:1px solid var(--border);
-  }
-  .yt-float.hidden{display:none;}
-  .yt-float iframe, .yt-float > div{width:100%; height:100%;}
+  /* 動画プレビュー。以前はコンパクト表示(折りたたみ時)だけ右上の小さい
+     浮きバッジ(.yt-float)にしていたが、「動画は横幅フルで、チャット欄が
+     ないだけの見た目にしてほしい」という指示(2026-09-07)を受け、
+     コンパクト/内画面(シアター)どちらも同じ#videoPane/.video-boxを使う
+     統一デザインに変更する。#videoPaneは#root直下の最初の子なので、
+     コンパクト時は自然に画面最上部に横幅いっぱいで並ぶ(#appがその下に続く)。
+     連携が無い間は#videoPaneごと隠す。 */
+  #videoPane.hidden{display:none;}
+  .video-box{width:100%; aspect-ratio:16/9; background:#000; overflow:hidden;}
+  .video-box iframe, .video-box > div{width:100%; height:100%;}
   .yt-status{font-size:12.5px; color:var(--accent); font-weight:700;}
   .yt-offset-row{display:flex; gap:6px;}
   .yt-offset-row .adjust{padding:6px 10px; font-size:12px;}
@@ -333,17 +329,17 @@
        この上限に阻まれて効かなかった)。ここ(通常#appルールより後)に
        書くことで確実に上書きする */
     #app{max-width:none; margin:0; flex:0.85 0.85 0%; min-width:0;}
-    /* #homeViewの中身(メモカード)はJSで#videoPaneMemoSlotへ移動済みなので、
-       ここは常に空。無印の#homeView{flex:1 1 auto}(ベースルール・174行目
-       付近)と同じ詳細度(ID)なので、それより後のここに書いて確実に上書きし、
-       チャット(.chat-box)へ縦幅を譲る(2026-09-07発覚: 同じIDセレクタが
-       ベースルールの方が後にあり、以前の上書きが効いていなかった=
-       「メモ画面が狭すぎ」バグと同型のミスを再度やった)。 */
-    #homeView{flex:0 0 auto; min-height:0;}
+    /* #homeViewの中身(メモカード)は動画連携中だけJSで#videoPaneMemoSlotへ
+       移動する(video-split時)。#root.video-splitスコープを付けたのは、
+       動画未連携時にも無条件でここが効くと#homeViewが潰れてしまうため
+       (2026-09-07発覚)。無印の#homeView{flex:1 1 auto}(ベースルール・161行目
+       付近)と同じ詳細度(ID)なので、それより後のここに書いて確実に上書きする。 */
+    #root.video-split #homeView{flex:0 0 auto; min-height:0;}
     .toast{position:absolute;}
-    /* 操作を#videoPane側へ出した分、#appのメモ欄はもう下帯ぶんの余白を
-       確保しなくていい(むしろ余白が無駄になり書ける面積が減っていた) */
-    .view{padding-bottom:calc(14px + var(--safe-b));}
+    /* 操作を#videoPane側へ出した分(video-split時のみ)、#appのメモ欄は
+       もう下帯ぶんの余白を確保しなくていい。動画未連携時は操作が#app内に
+       残るので、通常どおりの余白(下の.viewベースルール)のままにする */
+    #root.video-split .view{padding-bottom:calc(14px + var(--safe-b));}
     /* 内画面(Z Fold展開等の広い画面)では🕐が左端・他が右端に離れていると
        親指移動が大きくて押しにくい。ユーザー指示で全部右側に寄せる */
     .action-bar{justify-content:flex-end;}
@@ -409,9 +405,6 @@
        renderChatEmbed()が中身を埋める(コンパクトモードでは空のまま=
        どこに置いても見た目に影響しないので、コンパクト時の移動は不要) -->
   <div class="chat-box" id="ytChatWrap"></div>
-
-  <!-- リンク中の動画プレビュー(右上に小さく浮かせるだけ。再生を止めないよう常にDOM上に存在させる) -->
-  <div class="yt-float hidden" id="ytFloatBadge"><div id="ytPlayerHost"></div></div>
 
   <!-- ホーム(記録)画面。1配信=1つの連続テキスト。🕐は今のカーソル位置に
        時刻を挿入するだけ(タグ挿入と同じ仕組み)。一覧・個別カードは持たない。
@@ -654,7 +647,6 @@
   var ytApiReadyCallbacks = [];
   var ytPlayer = null;
   var ytPlayerSessionId = null;
-  var ytPlayerMode = null; // 'theater' | 'compact' — どちらのホストに接続しているか
   var ytElapsedSec = null;
   var ytPollInterval = null;
 
@@ -698,15 +690,25 @@
   function destroyYtPlayer(){
     if(ytPollInterval){ clearInterval(ytPollInterval); ytPollInterval=null; }
     if(ytPlayer && ytPlayer.destroy){ try{ ytPlayer.destroy(); }catch(e){} }
-    ytPlayer = null; ytPlayerSessionId = null; ytElapsedSec = null; ytPlayerMode = null;
+    ytPlayer = null; ytPlayerSessionId = null; ytElapsedSec = null;
   }
 
   // 横長/正方形に近い広い画面では「シアターモード」(動画+チャットを大きく表示)に切り替える。
   var ytTheaterQuery = window.matchMedia('(min-width: 700px)'); // CSS側の@mediaと必ず同じ値にする
   function isTheaterMode(){ return ytTheaterQuery.matches; }
 
-  // 内画面(シアターモード)では操作(タグ行・クイック追加バー・下帯)を丸ごと
-  // #videoPane側(チャットの下)へ移動する。通常モードでは#appの元の位置
+  // シアターモード(広い画面)かつ動画が実際に連携済み(#videoPaneが非表示でない)
+  // のときだけ、動画+チャットの2ペイン分割レイアウトを使う。動画未連携のときは
+  // #videoPaneごと隠れるので、幅が広いだけの通常(1カラム)表示にする
+  // (2026-09-07: 幅だけで判定すると、動画が無いのに#homeViewが空の
+  // チャット欄に押し潰されて消えるバグになった)。
+  function videoSplitActive(){
+    var vp = document.getElementById('videoPane');
+    return isTheaterMode() && !!vp && !vp.classList.contains('hidden');
+  }
+
+  // 動画連携中の広い画面では操作(タグ行・クイック追加バー・下帯)を丸ごと
+  // #videoPane側(チャットの下)へ移動する。それ以外では#appの元の位置
   // (#controlsHomeAnchorの直後)へ戻す(2026-09-06ユーザー指示: チャット欄が
   // 狭くなってもいいから、タップして使う物は画面右のチャットの下に置きたい)。
   function relocateControlsForMode(){
@@ -714,7 +716,10 @@
     var memoCard = document.getElementById('quickMemoCard');
     var memoSlot = document.getElementById('videoPaneMemoSlot');
     var homeView = document.getElementById('homeView');
-    if(isTheaterMode()){
+    var root = document.getElementById('root');
+    var split = videoSplitActive();
+    if(root) root.classList.toggle('video-split', split);
+    if(split){
       // メモカードを動画の下(チャットの反対側)へ、操作一式をその下へ
       // (ユーザー指示2026-09-06: 動画は右上のまま、チャットとメモを入れ替えたい。
       // チャット自体は常に#app側に常駐しているので動かすのはメモカードだけでいい)
@@ -756,41 +761,17 @@
     }catch(e){}
   }
 
+  // ⚠動画プレビューはコンパクト/内画面(シアター)どちらも同じ#ytPlayerHostBig
+  // 1本(2026-09-07に統一。以前はモードごとに別ホストを持ち、切替のたびに
+  // iframeを移動していたが、コレはブラウザ仕様(WHATWG issue #5484)により
+  // 既存ノードでも中身がリロードされてしまい、折りたたみ⇄展開でミュートに
+  // 戻る不具合の原因になっていた。ホストが1つしかなければ切替自体が発生
+  // しないので、この問題ごと構造的に無くなる)。
   function createYtPlayer(session){
     if(!session || !session.ytVideoId) return;
-    var mode = isTheaterMode() ? 'theater' : 'compact';
-    if(ytPlayer && ytPlayerSessionId===session.id){
-      if(ytPlayerMode===mode) return; // 既に接続済み・変更なし
-      // 同じ動画のまま折りたたみ⇄展開でモードだけ変わった場合、プレーヤーを
-      // 壊して作り直すと毎回ミュート状態に戻ってしまう(2026-09-05実機報告)。
-      // ⚠appendChildでのDOM移動は「既存ノードでもブラウジングコンテキストが
-      // アンロードされ中身がリロードされる」というブラウザ共通の仕様(WHATWG
-      // issue #5484)で、これが原因で前回の対策(移動するだけ)は効いていなかった。
-      // Chromeがこの問題を解決するために新設したNode.moveBefore()(リロードを
-      // 起こさない移動専用API・WebView 133+で利用可)を使う。無い端末向けの
-      // 保険として、フォールバック経路だけミュート状態を退避→復元する。
-      var newHostId = mode==='theater' ? 'ytPlayerHostBig' : 'ytPlayerHost';
-      var newHost = document.getElementById(newHostId);
-      var iframeEl = ytPlayer.getIframe ? ytPlayer.getIframe() : null;
-      if(newHost && iframeEl){
-        if(typeof newHost.moveBefore === 'function'){
-          newHost.innerHTML = '';
-          newHost.moveBefore(iframeEl, null);
-        } else {
-          var wasMuted = (ytPlayer.isMuted && ytPlayer.isMuted());
-          newHost.innerHTML = '';
-          newHost.appendChild(iframeEl); // リロードされる可能性がある(古いWebView向けの保険経路)
-          if(!wasMuted && ytPlayer.unMute){
-            setTimeout(function(){ try{ ytPlayer.unMute(); }catch(e){} }, 300);
-          }
-        }
-      }
-      ytPlayerMode = mode;
-      return;
-    }
+    if(ytPlayer && ytPlayerSessionId===session.id) return; // 既に接続済み
     destroyYtPlayer();
-    var hostId = mode==='theater' ? 'ytPlayerHostBig' : 'ytPlayerHost';
-    var host = document.getElementById(hostId);
+    var host = document.getElementById('ytPlayerHostBig');
     if(!host) return;
     host.innerHTML = '';
     var inner = document.createElement('div');
@@ -803,7 +784,6 @@
         events: {
           onReady: function(){
             ytPlayerSessionId = session.id;
-            ytPlayerMode = mode;
             if(ytPollInterval) clearInterval(ytPollInterval);
             ytPollInterval = setInterval(pollYtTime, 1000);
             pollYtTime();
@@ -852,17 +832,16 @@
   }
 
   function renderYtPanel(session){
-    var floatBadge = document.getElementById('ytFloatBadge');
-    if(!floatBadge) return;
+    var videoPane = document.getElementById('videoPane');
+    if(!videoPane) return;
     if(session && session.ytVideoId){
-      floatBadge.classList.remove('hidden');
-      var mode = isTheaterMode() ? 'theater' : 'compact';
-      if(!ytPlayer || ytPlayerSessionId!==session.id || ytPlayerMode!==mode){
+      videoPane.classList.remove('hidden');
+      if(!ytPlayer || ytPlayerSessionId!==session.id){
         setYtStatus('読み込み中…');
         loadYouTubeApi(function(){ createYtPlayer(session); }, function(){ unlinkYouTube(session); });
       }
     } else {
-      floatBadge.classList.add('hidden');
+      videoPane.classList.add('hidden');
     }
     // 設定シート内の連携状況セクションも同期する(開いている時だけ意味を持つが、
     // 閉じていても軽い処理なので毎回呼んで問題ない)
@@ -873,6 +852,7 @@
       linkSection.classList.toggle('hidden', linked);
       settingsBox.classList.toggle('hidden', !linked);
     }
+    relocateControlsForMode();
     renderChatEmbed(session);
   }
 
