@@ -585,13 +585,6 @@
         <button class="btn" id="ytSearchBtn">検索</button>
       </div>
       <div class="yt-search-results" id="ytSearchResults"></div>
-      <button type="button" class="btn ghost" id="ytApiKeyToggleBtn" style="margin-top:6px; font-size:12px; padding:6px 10px;">検索用APIキーを設定</button>
-      <div class="yt-api-key-row hidden" id="ytApiKeyRow">
-        <div class="add-tag-row">
-          <input type="text" id="ytApiKeyInput" placeholder="AIza...（YouTube Data API v3キー）">
-          <button class="btn" id="ytApiKeySaveBtn">保存</button>
-        </div>
-      </div>
     </div>
     <div class="yt-settings hidden" id="ytSettingsBox">
       <div class="field-label">YouTube連携</div>
@@ -601,6 +594,20 @@
         <button class="adjust" id="ytOffsetPlus">+5秒</button>
       </div>
       <button class="btn ghost" id="ytUnlinkBtn">連携解除</button>
+    </div>
+    <!-- ⚠以前は#ytLinkSectionの中にあったため、動画連携中は表示が
+         #ytSettingsBoxに切り替わってAPIキー欄へ辿り着けなかった
+         (2026-09-08発覚: 「コメント表示されない」報告の一因。連携中に
+         APIキーを設定しようとしても、一度「連携解除」しない限り
+         この項目自体が画面に存在しなかった)。連携状態に関わらず常に
+         見えるよう、#ytLinkSection/#ytSettingsBoxの外(共通の場所)に出す -->
+    <button type="button" class="btn ghost" id="ytApiKeyToggleBtn" style="margin-top:8px; font-size:12px; padding:6px 10px;">検索用APIキーを設定</button>
+    <div class="session-hint" id="ytApiKeyStatusHint" style="margin-top:4px;"></div>
+    <div class="yt-api-key-row hidden" id="ytApiKeyRow">
+      <div class="add-tag-row">
+        <input type="text" id="ytApiKeyInput" placeholder="AIza...（YouTube Data API v3キー）">
+        <button class="btn" id="ytApiKeySaveBtn">保存</button>
+      </div>
     </div>
 
     <div class="field-label">ワードボタンのセット（「セット」を押した1つだけがメモ下に出る）</div>
@@ -1018,12 +1025,15 @@
       .then(function(data){
         if(wantId !== lastChatVideoId) return; // 判定中に別動画へ切替済み
         if(data.error){
-          // APIキーが無効/期限切れ等でライブ判定自体ができなかった場合。
-          // 「配信じゃない」と決めつけずチャット埋め込みにフォールバックする
-          // (ネットワーク失敗時と同じ扱い)
-          lastChatMode = 'chat';
-          if(reloadBtn) reloadBtn.classList.remove('hidden');
-          insertChatIframe(wrap, wantId);
+          // ⚠2026-09-08: 以前はここでチャット埋め込みへ静かにフォールバック
+          // していたが、APIキーをわざわざ設定したのに動かない場合に原因が
+          // 一切分からなくなる(「コメント表示されない」報告の一因)。
+          // APIキー自体の問題(無効/権限/クォータ等)は表面化させて伝える。
+          var reason = data.error.errors && data.error.errors[0] && data.error.errors[0].reason;
+          var msg = reason==='quotaExceeded' ? 'YouTube APIの利用上限に達しました'
+            : 'APIキーでエラーが発生しました（設定を確認してください）: ' + (data.error.message || reason || '不明なエラー');
+          lastChatMode = 'comments';
+          wrap.innerHTML = '<div class="yt-comments-empty">'+escapeHtml(msg)+'</div>';
           return;
         }
         var item = data.items && data.items[0];
@@ -1084,7 +1094,15 @@
     state.ytApiKey = key;
     save();
     ytApiKeyRow.classList.add('hidden');
+    updateYtApiKeyStatusHint();
     showToast(key ? 'APIキーを保存しました' : 'APIキーを削除しました');
+    // ⚠動画を連携した後でAPIキーを保存したとき、renderChatEmbed()は
+    // videoIdが変わっていないと即returnして何もしないため、キーを保存しても
+    // チャット⇔コメントの再判定が一切走らずコメント表示に切り替わらない
+    // バグがあった(2026-09-08報告「コメント表示されない」の原因)。
+    // キャッシュ済みのvideoIdをリセットして強制的に再判定させる。
+    lastChatVideoId = null;
+    renderChatEmbed(activeSession());
   });
 
   async function searchYouTube(query){
@@ -1628,7 +1646,18 @@
     document.getElementById('ytApiKeyRow').classList.add('hidden');
     document.getElementById('ytSearchResults').innerHTML = '';
     document.getElementById('ytSearchInput').value = '';
+    updateYtApiKeyStatusHint();
     sessionSheet.classList.remove('hidden');
+  }
+  // APIキーが設定済みかどうかがひと目で分かるようにする(2026-09-08:
+  // 「コメント表示にAPIキーが必要」と伝えても、ユーザー自身が設定済みか
+  // 分からないという報告があったため)
+  function updateYtApiKeyStatusHint(){
+    var hint = document.getElementById('ytApiKeyStatusHint');
+    if(!hint) return;
+    hint.textContent = state.ytApiKey
+      ? 'APIキー設定済み(検索・配信中でないときのコメント表示に使われます)'
+      : '未設定(検索や、配信中でないときのコメント表示にはAPIキーが必要です)';
   }
   function closeSessionSheet(){ sessionSheet.classList.add('hidden'); }
 
