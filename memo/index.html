@@ -1200,10 +1200,39 @@
     save();
   });
 
+  // クリップボードにYouTubeのリンクが入っていたら連携を提案する(2026-09-21
+  // ユーザー指示: 共有ボタン経由よりもっと楽に連携したい。YouTube側で
+  // 「リンクをコピー」→最近使ったアプリからこのアプリに戻るだけで済むように、
+  // アプリが前面に来たタイミングでクリップボードを見て自動で連携を提案する)。
+  // ⚠navigator.clipboard.readText()はユーザー操作(クリック等)無しだと
+  // ブラウザ/WebViewによっては拒否されることがある。失敗しても黙って諦める
+  // (エラー表示はしない・既存の手動連携(URL貼り付け/検索)は変わらず使える)。
+  var lastClipboardPromptId = null;
+  function checkClipboardForYouTubeLink(){
+    if(!navigator.clipboard || !navigator.clipboard.readText) return;
+    navigator.clipboard.readText().then(function(text){
+      var id = extractYouTubeId(text);
+      if(!id) return;
+      var cur = activeSession();
+      if(cur && cur.ytVideoId === id) return; // 既にこの動画と連携中
+      if(id === lastClipboardPromptId) return; // 同じ提案を連発しない
+      lastClipboardPromptId = id;
+      // ⚠showToastのボタン押下ハンドラはactionFn()の直後にhideToast()を呼ぶため、
+      // actionFn内で別のトーストを出しても即座に消されてしまう。連携結果は
+      // renderHome()でメモ欄・動画パネルが切り替わること自体が見た目のフィード
+      // バックになるので、ここでは二重にトーストを出さない。
+      showToast('クリップボードの動画と連携しますか？', '連携する', function(){
+        linkYouTubeAsSession(id);
+        if(currentView==='home') renderHome();
+      }, 8000);
+    }).catch(function(){});
+  }
+
   // 分割画面の切り替えなどでタブが裏に回ると埋め込みプレーヤーが一時停止/停止することがあるため、
   // 表に戻ってきたタイミングで自動的に再生を復帰させる。
   document.addEventListener('visibilitychange', function(){
     if(document.visibilityState !== 'visible') return;
+    checkClipboardForYouTubeLink();
     var s = activeSession();
     if(!s || !s.ytVideoId) return;
     if(ytPlayer && ytPlayerSessionId===s.id){
@@ -1329,7 +1358,7 @@
   var toastMsg = document.getElementById('toastMsg');
   var toastAction = document.getElementById('toastAction');
   var toastTimer = null;
-  function showToast(msg, actionLabel, actionFn){
+  function showToast(msg, actionLabel, actionFn, duration){
     toastMsg.textContent = msg;
     if(actionLabel && actionFn){
       toastAction.style.display = '';
@@ -1341,7 +1370,7 @@
     }
     toastEl.classList.add('show');
     clearTimeout(toastTimer);
-    toastTimer = setTimeout(hideToast, 4000);
+    toastTimer = setTimeout(hideToast, duration || 4000);
   }
   function hideToast(){ toastEl.classList.remove('show'); }
 
@@ -2034,6 +2063,9 @@
   // ---------- 初期化 ----------
   relocateControlsForMode(); // 起動時点で内画面ならチャットの下に操作を出しておく
   showView('home');
+  // コールドスタート(ホーム画面アイコンから起動)はvisibilitychangeが発火しない
+  // ので、初回表示時にも1回クリップボードを確認しておく
+  checkClipboardForYouTubeLink();
 
   if('serviceWorker' in navigator && location.protocol.indexOf('http')===0){
     window.addEventListener('load', function(){
