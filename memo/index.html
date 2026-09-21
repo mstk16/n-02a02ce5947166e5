@@ -915,13 +915,27 @@
   // 新しいセッションで連携し直す。
   // ⚠共有起動・URL貼り付け・検索して選ぶ、の3つの連携経路すべてでコレを通すコト
   // (2026-09-04、共有経路だけ直して残り2経路を直し忘れる抜けが実際にあった)。
+  //
+  // 2026-09-21ユーザー指示: PC版拡張機能(youtube_memo_extension)と同じく
+  // 「同じ動画=同じメモの続き」にしたい。以前は「終了して保存」を押した動画を
+  // 再度連携すると常に空の新規メモになっていた(履歴には残るが本人は「消えた」と
+  // 誤解した)。動画IDが一致する既存セッションがあれば、終了済みでも再開する。
+  // 戻り値は呼び出し側のトースト出し分け用: 'same'=連携し直しただけ(何も変化
+  // 無し)/ 'resumed'=過去のメモを再開/ 'new'=真っさらな新規メモ。
   function linkYouTubeAsSession(id){
     var cur = activeSession();
-    var switching = !!(cur && cur.ytVideoId !== id);
-    if(switching) endActiveSessionCore(cur);
+    if(cur && cur.ytVideoId === id) return 'same';
+    var existing = state.sessions.find(function(s){ return s.ytVideoId === id; });
+    if(cur) endActiveSessionCore(cur);
+    if(existing){
+      existing.endedAt = null;
+      state.activeSessionId = existing.id;
+      linkYouTube(existing, id);
+      return 'resumed';
+    }
     var s = ensureActiveSession();
     linkYouTube(s, id);
-    return switching;
+    return 'new';
   }
 
   function renderYtPanel(session){
@@ -1068,8 +1082,9 @@
     var raw = document.getElementById('ytUrlInput').value;
     var id = extractYouTubeId(raw);
     if(!id){ showToast('YouTubeのURLを確認してください'); return; }
-    var switching = linkYouTubeAsSession(id);
-    if(switching) showToast('新しい配信メモを始めました');
+    var result = linkYouTubeAsSession(id);
+    if(result==='new') showToast('新しい配信メモを始めました');
+    else if(result==='resumed') showToast('前回のメモを再開しました');
     document.getElementById('ytUrlInput').value = '';
     if(currentView==='home') renderHome();
   });
@@ -1152,8 +1167,9 @@
       el.addEventListener('click', function(){
         var vid = el.dataset.vid;
         if(!vid) return;
-        var switching = linkYouTubeAsSession(vid);
-        if(switching) showToast('新しい配信メモを始めました');
+        var result = linkYouTubeAsSession(vid);
+        if(result==='new') showToast('新しい配信メモを始めました');
+        else if(result==='resumed') showToast('前回のメモを再開しました');
         wrap.innerHTML = '';
         document.getElementById('ytSearchInput').value = '';
         if(currentView==='home') renderHome();
@@ -1416,6 +1432,7 @@
         if(i===renamingQuickTagIdx){
           return '<input type="text" id="renameQuickTagInline" value="'+escapeAttr(t)+'" style="flex:1 1 auto; min-width:100px; padding:9px 12px; border-radius:999px; font-size:13.5px;">' +
             '<button type="button" class="chip" id="renameQuickTagConfirm">確定</button>' +
+            '<button type="button" class="chip" id="renameQuickTagDelete" aria-label="このワードを削除">削除</button>' +
             '<button type="button" class="chip" id="renameQuickTagCancel">×</button>';
         }
         return '<button class="chip" data-tag="'+escapeAttr(t)+'">'+escapeHtml(t)+'</button>';
@@ -1430,8 +1447,19 @@
         renamingQuickTagIdx = -1;
         renderQuickTags(container, onTap);
       }
+      // 長押しで開くこの編集画面の「×」は元々「編集キャンセル」でしかなく、
+      // ワード自体を消す手段が無かった(2026-09-21ユーザー報告: 追加したワードを
+      // 削除できない)。設定シートの管理リストと同じ即時削除(確認ダイアログ無し
+      // =prompt/confirm禁止ルールに合わせる)をここにも用意する。
+      function deleteTag(){
+        activeTagSet().tags.splice(renamingQuickTagIdx, 1);
+        save();
+        renamingQuickTagIdx = -1;
+        renderQuickTags(container, onTap);
+      }
       function cancelRename(){ renamingQuickTagIdx = -1; renderQuickTags(container, onTap); }
       document.getElementById('renameQuickTagConfirm').addEventListener('click', commitRename);
+      document.getElementById('renameQuickTagDelete').addEventListener('click', deleteTag);
       document.getElementById('renameQuickTagCancel').addEventListener('click', cancelRename);
       rInput.addEventListener('keydown', function(e){
         if(e.key==='Enter'){ e.preventDefault(); commitRename(); }
@@ -1559,21 +1587,35 @@
   // クイック追加バー(PC版ymmp_gui_new.pyの配信メモ入力欄と同じ考え方)。
   // 1行書いてEnter/追加ボタンで、タイムスタンプ付きの1行として末尾に確定し、
   // 欄はクリアされて次を打てる。ゲスト用は[ゲスト]の印を付けて区別する。
-  function submitQuickAdd(inputEl, prefix){
+  // タイムスタンプは「確定(Enter)した瞬間」ではなく「打ち始めた瞬間」を使う
+  // (2026-09-21ユーザー指示: 長い文を打つほど確定が遅れてズレが大きくなるため、
+  // 欄が空→非空になった最初のinputで時刻を確保しておき、確定時はそれを使う)。
+  var quickAddStartSec = { memo: null, guest: null };
+  function captureQuickAddStart(key, inputEl){
+    if(inputEl.value.length > 0){
+      if(quickAddStartSec[key] === null) quickAddStartSec[key] = currentElapsedSec(ensureActiveSession());
+    } else {
+      quickAddStartSec[key] = null;
+    }
+  }
+  function submitQuickAdd(inputEl, prefix, key){
     var text = inputEl.value.trim();
     if(!text) return;
     var s = ensureActiveSession();
-    var t = currentElapsedSec(s);
+    var t = (quickAddStartSec[key] !== null) ? quickAddStartSec[key] : currentElapsedSec(s);
     appendLine(formatElapsed(t) + ' ' + (prefix ? prefix + ' ' : '') + text);
     inputEl.value = '';
+    quickAddStartSec[key] = null;
     inputEl.focus(); // 連続入力しやすいよう欄に留まる(テキストエリアへは移さない)
   }
   var quickAddMemoInput = document.getElementById('quickAddMemoInput');
   var quickAddGuestInput = document.getElementById('quickAddGuestInput');
-  document.getElementById('quickAddMemoBtn').addEventListener('click', function(){ submitQuickAdd(quickAddMemoInput, null); });
-  quickAddMemoInput.addEventListener('keydown', function(e){ if(e.key==='Enter'){ e.preventDefault(); submitQuickAdd(quickAddMemoInput, null); } });
-  document.getElementById('quickAddGuestBtn').addEventListener('click', function(){ submitQuickAdd(quickAddGuestInput, '[ゲスト]'); });
-  quickAddGuestInput.addEventListener('keydown', function(e){ if(e.key==='Enter'){ e.preventDefault(); submitQuickAdd(quickAddGuestInput, '[ゲスト]'); } });
+  quickAddMemoInput.addEventListener('input', function(){ captureQuickAddStart('memo', quickAddMemoInput); });
+  quickAddGuestInput.addEventListener('input', function(){ captureQuickAddStart('guest', quickAddGuestInput); });
+  document.getElementById('quickAddMemoBtn').addEventListener('click', function(){ submitQuickAdd(quickAddMemoInput, null, 'memo'); });
+  quickAddMemoInput.addEventListener('keydown', function(e){ if(e.key==='Enter'){ e.preventDefault(); submitQuickAdd(quickAddMemoInput, null, 'memo'); } });
+  document.getElementById('quickAddGuestBtn').addEventListener('click', function(){ submitQuickAdd(quickAddGuestInput, '[ゲスト]', 'guest'); });
+  quickAddGuestInput.addEventListener('keydown', function(e){ if(e.key==='Enter'){ e.preventDefault(); submitQuickAdd(quickAddGuestInput, '[ゲスト]', 'guest'); } });
 
   function renderMemoItems(container, memos, onTap){
     if(!memos.length){
@@ -1983,8 +2025,8 @@
     try{
       var id = extractYouTubeId(new URLSearchParams(location.search).get('yt'));
       if(!id) return;
-      var switching = linkYouTubeAsSession(id);
-      showToast(switching ? '新しい配信メモを始めました' : '共有された動画と連携しました');
+      var result = linkYouTubeAsSession(id);
+      showToast(result==='new' ? '新しい配信メモを始めました' : result==='resumed' ? '前回のメモを再開しました' : '共有された動画と連携しました');
       history.replaceState(null, '', location.pathname); // 再読み込み時に再実行しないようクエリを消す
     }catch(e){}
   })();
