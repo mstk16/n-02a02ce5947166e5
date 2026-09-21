@@ -32,7 +32,13 @@
     --safe-r: calc(env(safe-area-inset-right, 0px) + 12px);
   }
   *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
-  html,body{height:100%;}
+  /* ページ自体(html/body)は絶対にスクロールさせない(2026-09-22ユーザー報告:
+     動画下のメモ欄をスクロールすると動画ごと流れて消える)。#videoPaneや
+     .quick-memo-card textarea等、各パーツが自分の内側だけをoverflow-y:auto
+     で持つ設計なので、bodyまでスクロール可能になっているとタッチスクロールが
+     内側の上下端に達した瞬間にbody側へ「連鎖」してしまう(スクロールチェイニング)。
+     bodyを固定してこの連鎖の逃げ場を無くす。 */
+  html,body{height:100%; overflow:hidden;}
   body{
     margin:0; background:var(--bg); color:var(--text);
     font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Yu Gothic UI",sans-serif;
@@ -77,7 +83,7 @@
     .chat-box iframe{width:100%; height:100%; border:0; display:block;}
     /* ライブチャットが無効な動画のとき、代わりに表示する通常コメントの一覧
        (2026-09-07指示)。#ytChatWrap自体をスクロール領域にする */
-    .chat-box{overflow-y:auto;}
+    .chat-box{overflow-y:auto; overscroll-behavior:contain;}
     .yt-comments-empty{color:var(--sub); font-size:13px; text-align:center; padding:24px 16px; line-height:1.7;}
     .yt-comments-list{display:flex; flex-direction:column; gap:10px; padding:10px;}
     .yt-comment-item{background:var(--panel); border:1px solid var(--border); border-radius:10px; padding:8px 10px;}
@@ -142,7 +148,7 @@
      追従させる(JSが--controls-hを更新する)。ゲストのセリフ欄の表示/非表示で
      高さが変わるため、決め打ちpxだと隠れる/余りすぎるどちらかになる
      (2026-09-07)。212pxは--controls-h未設定時(JS実行前の一瞬)だけの保険値。 */
-  .view{flex:1 1 auto; overflow-y:auto; padding:var(--safe-t) var(--safe-r) calc(var(--controls-h, 212px) + var(--safe-b)) var(--safe-l); display:flex; flex-direction:column;}
+  .view{flex:1 1 auto; overflow-y:auto; overscroll-behavior:contain; padding:var(--safe-t) var(--safe-r) calc(var(--controls-h, 212px) + var(--safe-b)) var(--safe-l); display:flex; flex-direction:column;}
   .view.hidden{display:none;}
   /* 常時見えるスクロールバー。Chromium系では効くが、モバイルのタッチスクロールでは
      OS側が自動で細い一時表示バーに差し替えてしまい、反映されないコトがある */
@@ -215,6 +221,9 @@
   .quick-memo-card textarea{
     flex:1 1 auto; width:100%; height:100%; background:var(--panel); border:1px solid var(--border); color:var(--text);
     border-radius:14px; padding:14px; font-size:16px; line-height:1.6; font-family:inherit; resize:none;
+    /* 上下端まで打ってからのスクロールが親(動画パネル等)へ連鎖して
+       巻き込まないようにする(2026-09-22) */
+    overscroll-behavior:contain;
   }
   .quick-memo-card textarea:focus{outline:2px solid var(--accent); outline-offset:0;}
 
