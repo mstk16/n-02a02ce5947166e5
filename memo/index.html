@@ -151,6 +151,11 @@
   .iconbtn{
     background:none; border:none; color:var(--sub); font-size:20px;
     padding:6px 8px; border-radius:8px; cursor:pointer;
+    /* ⚙の1.5秒長押しで更新する仕組みが、端末側のテキスト選択/長押しメニューに
+       割り込まれてタイマーが発火しないコトがあった(.chipには既にある対策が
+       .iconbtnには無かった・2026-09-24実機報告)。同じ対策をこちらにも入れる */
+    -webkit-user-select:none; user-select:none; -webkit-touch-callout:none;
+    touch-action:manipulation;
   }
   .iconbtn:active{background:var(--panel2);}
   .iconbtn.pressing{background:var(--accent-dim); color:var(--accent);}
