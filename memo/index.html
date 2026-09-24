@@ -318,6 +318,16 @@
   .navchip.active{color:var(--accent);}
   .navchip:active, .iconbtn:active{background:var(--panel2);}
 
+  /* タグ帯の上の常設編集ボタン。タグ本体(.chip)より小さく・控えめにして、
+     長押しメニューの対象(.chip)と間違えられないようにする */
+  .tag-edit-btn{
+    align-self:flex-start; margin:6px var(--safe-r) 0 var(--safe-l);
+    background:none; border:1px solid var(--border); color:var(--sub);
+    padding:5px 11px; border-radius:999px; font-size:11.5px; cursor:pointer;
+  }
+  .tag-edit-btn:active{background:var(--panel2);}
+  .tag-edit-btn.hidden{display:none;}
+
   /* タグ専用の行。#controlsGroup内でクイック追加バーより上(メモ側)に来る */
   .tag-bar{
     display:flex; gap:8px; overflow-x:auto; -webkit-overflow-scrolling:touch;
@@ -480,8 +490,10 @@
   .tag-manage-del:active{color:var(--danger);}
 
   /* ===== press-gestures.js の色をこのアプリの配色に合わせる(2026-09-25) =====
-     タグ(ワード)チップの長押しメニュー(リネーム/削除)専用。本体は下の
-     #pgStyle(press-gestures.css そのまま)を参照 */
+     ワードボタンのグループ長押しメニューで使う。本体は下の#pgStyle
+     (press-gestures.css そのまま)を参照。モジュール本体は改造しない
+     方針なので、サイズ調整は#pgStyleの後ろ(利用側の上書き・下の
+     #pgOverrideを参照)で行う。 */
   :root{
     --pg-paper: var(--panel2);
     --pg-ink: var(--text);
@@ -610,6 +622,13 @@
   stroke-dashoffset: 0;
 }
 </style>
+<style id="pgOverride">
+/* 升目のラベルが小さすぎるという指摘(2026-09-25)。.chipと同じくらいの
+   大きさ・タップしやすさに揃える(モジュール既定は11px/4px 8px)。
+   #pgStyleより後ろに置いて確実に上書きする(モジュール本体は改造しない)。 */
+.pg-label{ font-size:15px; padding:8px 14px; }
+.pg-label.picking{ padding:7px 13px; }
+</style>
 </head>
 <body>
 <div id="root">
@@ -671,6 +690,10 @@
        移動する。通常時はここ(#controlsHomeAnchorの直後)が定位置 -->
   <div id="controlsHomeAnchor" style="display:none"></div>
   <div id="controlsGroup">
+    <!-- タグ帯の上に常設の編集ボタン(2026-09-25ユーザー指示: 長押しメニューとは
+         別に、グループの名前変更・中身編集への近道が欲しい)。タップで設定シートの
+         「ワードボタンのグループ」欄まで直接連れて行く -->
+    <button type="button" class="tag-edit-btn" id="tagEditGroupBtn">✎ グループを編集</button>
     <!-- タグ専用の行(記録画面のときだけ表示) -->
     <div class="tag-bar" id="quickTagsWrap"></div>
 
@@ -2171,6 +2194,7 @@
     Object.keys(views).forEach(function(k){ views[k].classList.toggle('hidden', k!==name); });
     navBtns.forEach(function(b){ b.classList.toggle('active', b.dataset.view===name); });
     document.getElementById('recordBtn').classList.toggle('hidden', name!=='home');
+    document.getElementById('tagEditGroupBtn').classList.toggle('hidden', name!=='home');
     document.getElementById('quickTagsWrap').classList.toggle('hidden', name!=='home');
     document.getElementById('quickAddBar').classList.toggle('hidden', name!=='home');
     // シアターモードでは#quickMemoCardが#homeViewの外(#videoPaneMemoSlot)に
@@ -2233,15 +2257,40 @@
   // 全グループ(state.tagSets)を同時にボタンとして並べる。タップ=何もしない
   // (押した瞬間に升目が出るのでタップだけでは選べない・target()の仕様)、
   // 押したまま指を動かして向きを選び離すとそのワードを挿入する。
-  // グループの追加・名前変更・中身(ワード)の追加・削除は全部⚙設定シート側
-  // (ワードボタンのグループ管理)で行う。ホーム画面のこの帯自体には
-  // 編集UIを持たない(以前あった個別ワードの長押しリネーム/削除は、グループ化
-  // に伴い設定シートの「グループの中身」管理へ統合して廃止)。
-  var REVEAL_DIRS = ['up', 'upright', 'right', 'downright', 'down', 'downleft', 'left', 'upleft'];
+  // グループの名前変更・中身(ワード)の追加・削除は⚙設定シート側
+  // (ワードボタンのグループ管理)で行うが、グループの新規追加だけはこの帯の
+  // 「＋追加」からも素早くできるようにする(2026-09-25ユーザー指摘:
+  // 前は個別ワードの追加チップがあったのに、グループ化で丸ごと消してしまい
+  // 「ボタンが1個しかないのに増やす手段が無い」状態になっていた)。
+  var addingQuickGroup = false;
   function renderQuickTags(container, onTap){
+    if(addingQuickGroup){
+      container.innerHTML =
+        '<input type="text" id="newQuickGroupInline" placeholder="新しいグループ名（例：ゲーム進行）" style="flex:1 1 auto; min-width:100px; padding:9px 12px; border-radius:999px; font-size:13.5px;">' +
+        '<button type="button" class="chip" id="newQuickGroupConfirm">追加</button>' +
+        '<button type="button" class="chip" id="newQuickGroupCancel">×</button>';
+      var input = document.getElementById('newQuickGroupInline');
+      function commit(){
+        var t = input.value.trim();
+        if(t) state.tagSets.push({ id: uid(), name: t, tags: [] });
+        addingQuickGroup = false;
+        save();
+        renderQuickTags(container, onTap);
+      }
+      function cancel(){ addingQuickGroup = false; renderQuickTags(container, onTap); }
+      document.getElementById('newQuickGroupConfirm').addEventListener('click', commit);
+      document.getElementById('newQuickGroupCancel').addEventListener('click', cancel);
+      input.addEventListener('keydown', function(e){
+        if(e.key==='Enter'){ e.preventDefault(); commit(); }
+        if(e.key==='Escape'){ cancel(); }
+      });
+      input.focus();
+      return;
+    }
     var html = state.tagSets.map(function(set){
       return '<button type="button" class="chip" data-setid="'+set.id+'">'+escapeHtml(set.name)+'</button>';
     }).join('');
+    html += '<button type="button" class="chip add" id="quickAddGroupChip">＋追加</button>';
     container.innerHTML = html;
     container.querySelectorAll('.chip[data-setid]').forEach(function(el){
       var set = state.tagSets.filter(function(s){ return s.id === el.dataset.setid; })[0];
@@ -2256,7 +2305,13 @@
         onPick: function(dir, action){ onTap(action.label); }
       });
     });
+    var addChip = document.getElementById('quickAddGroupChip');
+    if(addChip) addChip.addEventListener('click', function(){
+      addingQuickGroup = true;
+      renderQuickTags(container, onTap);
+    });
   }
+  var REVEAL_DIRS = ['up', 'upright', 'right', 'downright', 'down', 'downleft', 'left', 'upleft'];
 
   // タグ(スタンプ)ボタン＝押した瞬間のタイムスタンプ付きで末尾に追記する
   // (🕐・クイック追加バーと同じ「常に末尾へ」方式。ユーザー指示:
@@ -2385,7 +2440,7 @@
   // ---------- 設定シート ----------
   var sessionSheet = document.getElementById('sessionSheet');
 
-  function openSessionSheet(){
+  function openSessionSheet(scrollToId){
     var s = activeSession();
     document.getElementById('endSessionBtn').style.display = s ? '' : 'none';
     document.getElementById('swapPanesToggle').checked = !!state.swapPanes;
@@ -2401,6 +2456,12 @@
     document.getElementById('ytSearchInput').value = '';
     updateYtApiKeyStatusHint();
     sessionSheet.classList.remove('hidden');
+    // タグ帯上の「✎グループを編集」から来た時だけ、シート内の該当欄まで
+    // スクロールして連れて行く(2026-09-25)
+    if(scrollToId){
+      var target = document.getElementById(scrollToId);
+      if(target) setTimeout(function(){ target.scrollIntoView({block:'center'}); }, 50);
+    }
   }
   // APIキーが設定済みかどうかがひと目で分かるようにする(2026-09-08:
   // 「コメント表示にAPIキーが必要」と伝えても、ユーザー自身が設定済みか
@@ -2599,6 +2660,10 @@
       openSessionSheet();
     });
   })();
+
+  document.getElementById('tagEditGroupBtn').addEventListener('click', function(){
+    openSessionSheet('tagSetList');
+  });
 
   document.getElementById('endSessionBtn').addEventListener('click', function(){
     if(endActiveSession()) closeSessionSheet();
