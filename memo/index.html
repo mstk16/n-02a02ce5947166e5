@@ -137,6 +137,17 @@
   }
   .chat-reload-btn:active{background:var(--panel2);}
   .chat-reload-btn:not(.hidden){display:flex;}
+  /* ライブチャット埋め込み下端の「ログインしてチャットを始める」入力欄を隠す板。
+     iframeはクロスオリジンで中身を直接消せないため、同じ場所に重ねて隠すだけ
+     (2026-09-24)。高さはYouTube側のレイアウト次第で目安値。ズレて本文まで
+     隠れる/入力欄が見えてしまう場合は実機で高さを調整すること。
+     クリックもここで受け止めて透過させない(pointer-eventsは既定のautoのまま)。 */
+  .chat-input-mask{
+    display:none;
+    position:absolute; left:0; right:0; z-index:4; /* topはJSが#ytChatWrapの実際の下端に合わせて設定する */
+    height:110px; background:var(--bg); border-top:1px solid var(--border);
+  }
+  .chat-input-mask:not(.hidden){display:block;}
   .iconbtn{
     background:none; border:none; color:var(--sub); font-size:20px;
     padding:6px 8px; border-radius:8px; cursor:pointer;
@@ -488,6 +499,13 @@
        #ytChatWrapのinnerHTMLはrenderChatEmbed()が丸ごと差し替えるので、
        ボタンはその外(#appの直下)に置いて#ytChatWrapへ重ねて表示する -->
   <button type="button" class="chat-reload-btn hidden" id="chatReloadBtn" aria-label="チャットを再読み込み">↺</button>
+  <!-- ライブチャット埋め込み(youtube.com側iframe・クロスオリジンにつき中身は
+       直接操作不可)の下端には「ログインしてチャットを始める」入力欄が出るが、
+       WebView内蔵ブラウザではGoogleサインイン自体がブロックされ常に使えない
+       (2026-09-24ユーザー報告)。入力欄だけを消すコトはできないので、代わりに
+       同じ位置に自前の板を重ねて隠す(チャット本文の閲覧自体は上のiframeが
+       そのまま担うので影響しない) -->
+  <div class="chat-input-mask hidden" id="chatInputMask"></div>
 
   <!-- ホーム(記録)画面。1配信=1つの連続テキスト。🕐は今のカーソル位置に
        時刻を挿入するだけ(タグ挿入と同じ仕組み)。一覧・個別カードは持たない。
@@ -632,6 +650,12 @@
       <input type="text" id="newPresetTagInput" placeholder="例：◆感想◇">
       <button class="btn" id="addPresetTagBtn">追加</button>
     </div>
+
+    <div class="field-label">アプリの更新</div>
+    <div class="sheet-buttons">
+      <button class="btn" id="checkUpdateBtn">最新版を取得</button>
+    </div>
+    <div class="session-hint" id="updateStatusText" style="margin-top:4px;"></div>
 
     <div class="sheet-buttons settings-end-row">
       <button class="btn danger" id="endSessionBtn" style="display:none;">配信を終了して保存</button>
@@ -1021,13 +1045,26 @@
       wrap.innerHTML = '<div class="yt-comments-empty">コメントを取得できませんでした</div>';
     });
   }
+  // #chatInputMaskは#appの直下(#ytChatWrapの兄弟)に居るため、CSSのbottom:0だけでは
+  // #ytChatWrapの実際の下端(#app全体の高さより短いコトがある)とズレる。
+  // #ytChatWrap自身の高さから逆算してtopをpxで直接指定する(2026-09-24)。
+  function positionChatInputMask(){
+    var wrap = document.getElementById('ytChatWrap');
+    var mask = document.getElementById('chatInputMask');
+    if(!wrap || !mask || mask.classList.contains('hidden')) return;
+    mask.style.top = (wrap.offsetTop + wrap.offsetHeight - mask.offsetHeight) + 'px';
+  }
+  window.addEventListener('resize', positionChatInputMask);
+
   function renderChatEmbed(session){
     var wrap = document.getElementById('ytChatWrap');
     var reloadBtn = document.getElementById('chatReloadBtn');
+    var inputMask = document.getElementById('chatInputMask');
     if(!wrap) return;
     var wantId = (isTheaterMode() && session && session.ytVideoId) ? session.ytVideoId : null;
     if(!wantId){
       if(reloadBtn) reloadBtn.classList.add('hidden');
+      if(inputMask) inputMask.classList.add('hidden');
       lastChatVideoId = null; lastChatMode = null;
       wrap.innerHTML = '';
       return;
@@ -1037,11 +1074,13 @@
     if(!state.ytApiKey){
       lastChatMode = 'chat';
       if(reloadBtn) reloadBtn.classList.remove('hidden');
+      if(inputMask){ inputMask.classList.remove('hidden'); positionChatInputMask(); }
       insertChatIframe(wrap, wantId);
       return;
     }
     lastChatMode = null; // 判定中
     if(reloadBtn) reloadBtn.classList.add('hidden');
+    if(inputMask) inputMask.classList.add('hidden');
     wrap.innerHTML = '<div class="yt-comments-empty">チャットの状態を確認中…</div>';
     var apiKey = state.ytApiKey;
     fetchYtJson('https://www.googleapis.com/youtube/v3/videos?part=snippet&id=' + encodeURIComponent(wantId) + '&key=' + encodeURIComponent(apiKey))
@@ -1064,6 +1103,7 @@
         if(liveStatus === 'live'){
           lastChatMode = 'chat';
           if(reloadBtn) reloadBtn.classList.remove('hidden');
+          if(inputMask){ inputMask.classList.remove('hidden'); positionChatInputMask(); }
           insertChatIframe(wrap, wantId);
         } else {
           lastChatMode = 'comments';
@@ -1075,6 +1115,7 @@
         // API呼び出し自体に失敗した場合はチャット埋め込みにフォールバック
         lastChatMode = 'chat';
         if(reloadBtn) reloadBtn.classList.remove('hidden');
+        if(inputMask){ inputMask.classList.remove('hidden'); positionChatInputMask(); }
         insertChatIframe(wrap, wantId);
       });
   }
@@ -1834,38 +1875,42 @@
     if(currentView==='home') renderQuickTags(quickTagsWrap, insertTagTemplate);
   });
 
-  // ⚙設定ボタンの1.5秒長押しで、最新版を強制的に取り直す(イズレ/アシアト同様のパターン)。
-  // このアプリはService Workerがキャッシュ優先＋裏で新版取得なので、放っておくと
-  // 「更新は次回起動時にしか反映されない」。今すぐ最新にしたい場合の脱出口として用意する。
+  // 最新版を強制的に取り直す(イズレ/アシアト同様のパターン)。このアプリは
+  // Service Workerがキャッシュ優先＋裏で新版取得なので、放っておくと「更新は
+  // 次回起動時にしか反映されない」。今すぐ最新にしたい場合の脱出口として用意する。
+  // ⚙設定ボタンの1.5秒長押し(隠しコマンドで分かりにくいという指摘・2026-09-24)に加え、
+  // 設定シートの「最新版を取得」ボタン・アプデ検知トーストの両方から呼べるよう
+  // 外側スコープの関数にしてある。
+  async function forceUpdate(){
+    showToast('最新版を取得しています…');
+    try{
+      if('caches' in window){
+        var keys = await caches.keys();
+        await Promise.all(keys.map(function(k){ return caches.delete(k); }));
+      }
+      if('serviceWorker' in navigator){
+        // updateだけだと登録済みのSW自体は残るため、古い版がfetchを
+        // 処理し続けるコトがある。登録解除まで行い、次回読み込みで
+        // 完全にゼロから登録し直させる。
+        var regs = await navigator.serviceWorker.getRegistrations();
+        await Promise.all(regs.map(function(r){ return r.unregister(); }));
+      }
+    }catch(e){ /* 取得に失敗しても、とりあえずリロードだけは試みる */ }
+    // ⚠GitHub Pagesはindex.htmlに Cache-Control: max-age=600 (10分)を
+    // 付けて配信している。Service Worker/Cache Storageを全部消しても、
+    // コレはブラウザのHTTPキャッシュ(別物)なので、素の location.reload()
+    // では10分以内のpush直後に更新してもキャッシュ済みの古い版が返って
+    // しまう不具合が実際にあった(2026-09-06実機発覚)。クエリを変えて
+    // 別URL扱いにし、HTTPキャッシュを確実に迂回する。
+    location.href = location.pathname + '?_upd=' + Date.now();
+  }
+  document.getElementById('checkUpdateBtn').addEventListener('click', forceUpdate);
+
   (function(){
     var btn = document.getElementById('settingsBtn');
     var LONG_PRESS_MS = 1500;
     var pressTimer = null;
     var longPressFired = false;
-
-    async function forceUpdate(){
-      showToast('最新版を取得しています…');
-      try{
-        if('caches' in window){
-          var keys = await caches.keys();
-          await Promise.all(keys.map(function(k){ return caches.delete(k); }));
-        }
-        if('serviceWorker' in navigator){
-          // updateだけだと登録済みのSW自体は残るため、古い版がfetchを
-          // 処理し続けるコトがある。登録解除まで行い、次回読み込みで
-          // 完全にゼロから登録し直させる。
-          var regs = await navigator.serviceWorker.getRegistrations();
-          await Promise.all(regs.map(function(r){ return r.unregister(); }));
-        }
-      }catch(e){ /* 取得に失敗しても、とりあえずリロードだけは試みる */ }
-      // ⚠GitHub Pagesはindex.htmlに Cache-Control: max-age=600 (10分)を
-      // 付けて配信している。Service Worker/Cache Storageを全部消しても、
-      // コレはブラウザのHTTPキャッシュ(別物)なので、素の location.reload()
-      // では10分以内のpush直後に更新してもキャッシュ済みの古い版が返って
-      // しまう不具合が実際にあった(2026-09-06実機発覚)。クエリを変えて
-      // 別URL扱いにし、HTTPキャッシュを確実に迂回する。
-      location.href = location.pathname + '?_upd=' + Date.now();
-    }
 
     function startPress(){
       longPressFired = false;
@@ -2086,9 +2131,35 @@
   // ので、初回表示時にも1回クリップボードを確認しておく
   checkClipboardForYouTubeLink();
 
+  // アプデ検知(2026-09-24ユーザー指示: 「アプデがあります。更新しますか？」を
+  // 出して自動で更新してほしい)。sw.jsのinstallハンドラは既にskipWaiting()を
+  // 無条件で呼んでいる(=新版が見つかり次第すぐ有効化してこのページの制御を奪う)ため、
+  // controllerchangeイベントを見張るだけで「新版に切り替わった」を検知できる。
+  // ⚠初回インストール時(それまでSWに制御されていない状態から初めて制御下に入る時)
+  // もcontrollerchangeが発火するが、これは「更新」ではないので誤検知しないよう、
+  // 登録直後の時点で既にcontrollerが居たかどうかで判定する。
+  var UPDATE_CHECK_INTERVAL_MS = 10 * 60 * 1000; // 10分
   if('serviceWorker' in navigator && location.protocol.indexOf('http')===0){
     window.addEventListener('load', function(){
-      navigator.serviceWorker.register('./sw.js').catch(function(){});
+      navigator.serviceWorker.register('./sw.js').then(function(reg){
+        var hadControllerAtLoad = !!navigator.serviceWorker.controller;
+        var prompted = false;
+        navigator.serviceWorker.addEventListener('controllerchange', function(){
+          if(!hadControllerAtLoad){ hadControllerAtLoad = true; return; } // 初回インストールは無視
+          if(prompted) return;
+          prompted = true;
+          showToast('アプデがあります。更新しますか？', '更新する', function(){
+            location.reload();
+          }, 20000);
+        });
+        setInterval(function(){ reg.update().catch(function(){}); }, UPDATE_CHECK_INTERVAL_MS);
+        // アプリを再び開いた瞬間(配信の合間に他アプリへ切替→戻ってきた等)にも
+        // チェックしておく(visibilitychangeハンドラは既にクリップボード確認用に
+        // あるので、そこにもう1つ処理を足す形にはせず、ここで直接登録する)
+        document.addEventListener('visibilitychange', function(){
+          if(document.visibilityState === 'visible') reg.update().catch(function(){});
+        });
+      }).catch(function(){});
     });
   }
 })();
