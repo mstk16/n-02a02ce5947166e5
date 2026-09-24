@@ -477,6 +477,137 @@
     flex:0 0 auto; background:none; border:none; color:var(--sub); font-size:16px; cursor:pointer; padding:2px 6px;
   }
   .tag-manage-del:active{color:var(--danger);}
+
+  /* ===== press-gestures.js の色をこのアプリの配色に合わせる(2026-09-25) =====
+     タグ(ワード)チップの長押しメニュー(リネーム/削除)専用。本体は下の
+     #pgStyle(press-gestures.css そのまま)を参照 */
+  :root{
+    --pg-paper: var(--panel2);
+    --pg-ink: var(--text);
+    --pg-accent: var(--accent);
+    --pg-rule: var(--border);
+    --pg-glyph: var(--bg);
+    --pg-scrim: rgba(0,0,0,.4);
+  }
+</style>
+<style id="pgStyle">
+/*!
+ * press-gestures.css — press-gestures.js の見た目(そのまま同梱・改造しない。
+ * 直すときは C:/Users/ts524/clode_code/press-gestures/ 側を直して配り直すこと)
+ */
+.pg-bg,
+.pg-target,
+.pg-holdset {
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+}
+.pg-scrim {
+  position: fixed;
+  inset: 0;
+  background: var(--pg-scrim, rgba(43, 38, 34, .12));
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .15s ease;
+  z-index: var(--pg-z, 1000);
+}
+.pg-scrim.on { opacity: 1; }
+.pg-label {
+  position: fixed;
+  font-family: var(--pg-font, system-ui, -apple-system, "Hiragino Sans", "Noto Sans JP", sans-serif);
+  font-size: 11px;
+  line-height: 1.4;
+  background: var(--pg-paper, #EFE7D8);
+  border: 1px solid var(--pg-rule, #C4B49A);
+  border-radius: var(--pg-radius, 8px);
+  padding: 4px 8px;
+  color: var(--pg-ink, #2B2622);
+  transform: translate(-50%, -50%) scale(.4);
+  opacity: 0;
+  filter: blur(2px);
+  transition: opacity .22s ease-out, transform .24s cubic-bezier(.22, 1, .36, 1), filter .22s ease-out;
+  pointer-events: none;
+  white-space: nowrap;
+  max-width: 40vw;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  z-index: calc(var(--pg-z, 1000) + 1);
+}
+.pg-label.on { opacity: 1; filter: blur(0); }
+.pg-label.picking {
+  border-color: var(--pg-accent, #9B3B3B);
+  border-width: 2px;
+  padding: 3px 7px;
+  background: var(--pg-accent, #9B3B3B);
+  color: var(--pg-paper, #EFE7D8);
+  font-weight: 600;
+}
+.pg-label.pg-as-icon { padding: 4px; line-height: 0; }
+.pg-label.pg-as-icon.picking { padding: 3px; }
+.pg-label.pg-as-icon img { width: 38px; height: 38px; display: block; border-radius: var(--pg-radius, 8px); }
+.pg-glyph {
+  display: block;
+  width: 38px;
+  height: 38px;
+  border-radius: var(--pg-radius, 8px);
+  background: var(--pg-ink, #2B2622);
+  padding: 8px;
+  box-sizing: border-box;
+}
+.pg-glyph svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  fill: none;
+  stroke: var(--pg-glyph, #EFE7D8);
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.pg-finger {
+  position: fixed;
+  border-radius: 50%;
+  pointer-events: none;
+  background: var(--pg-finger-fill, rgba(155, 59, 59, .18));
+  border: 2px solid var(--pg-finger-line, rgba(155, 59, 59, .6));
+  box-sizing: border-box;
+  transform: translate(-50%, -50%);
+  opacity: 0;
+  transition: opacity .12s ease;
+  z-index: calc(var(--pg-z, 1000) + 2);
+}
+.pg-finger.on { opacity: 1; }
+.pg-gauge {
+  position: fixed;
+  left: 0;
+  top: 0;
+  width: 60px;
+  height: 60px;
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+  opacity: 0;
+  transition: opacity .12s ease;
+  z-index: calc(var(--pg-z, 1000) + 3);
+}
+.pg-gauge.on { opacity: 1; }
+.pg-gauge svg { display: block; }
+.pg-gauge circle.pg-track,
+.pg-gauge circle.pg-fill {
+  fill: none;
+  stroke-width: 4;
+  stroke-linecap: round;
+  stroke-dasharray: 50.3 150.8;
+  transform: rotate(-150deg);
+  transform-origin: 50% 50%;
+}
+.pg-gauge circle.pg-track { stroke: var(--pg-rule, #C4B49A); opacity: .5; }
+.pg-gauge circle.pg-fill { stroke: var(--pg-accent, #9B3B3B); stroke-dashoffset: 50.3; }
+.pg-gauge.on circle.pg-fill {
+  transition: stroke-dashoffset var(--pg-gauge-ms, 780ms) linear;
+  stroke-dashoffset: 0;
+}
 </style>
 </head>
 <body>
@@ -671,6 +802,595 @@
     </div>
   </div>
 </div>
+
+<!-- press-gestures.js(そのまま同梱・改造しない。直すときは
+     C:/Users/ts524/clode_code/press-gestures/ 側を直して配り直すこと)。
+     タグ(ワード)チップの長押しメニュー(リネーム/削除)に使う(2026-09-25)。 -->
+<script>
+/*!
+ * press-gestures.js — 長押し系ジェスチャーの単体モジュール（依存ゼロ）
+ */
+(function (root, factory) {
+  'use strict';
+  var api = factory(root);
+  if (typeof module === 'object' && module.exports) module.exports = api;
+  if (root) root.PressGestures = api;
+})(typeof window !== 'undefined' ? window : null, function (win) {
+  'use strict';
+
+  var doc = win ? win.document : null;
+
+  var DIRS = ['up', 'down', 'left', 'right', 'upleft', 'upright', 'downleft', 'downright'];
+  var AXIS_ORDER = ['right', 'downright', 'down', 'downleft', 'left', 'upleft', 'up', 'upright'];
+  var ROW_ORDER = ['left', 'upleft', 'up', 'upright', 'right', 'downright', 'down', 'downleft'];
+  var GRID = {
+    upleft: [-1, -1], up: [0, -1], upright: [1, -1],
+    left: [-1, 0], right: [1, 0],
+    downleft: [-1, 1], down: [0, 1], downright: [1, 1]
+  };
+
+  var C = {
+    MOVE_PX: 32, GAP: 6, MARGIN: 8, PAD_LIFT: 56, TOP_EXTRA: 8, CANCEL_PAD: 52,
+    AROUND_K: 0.9, DIAG_K: 0.72, WIDE_K: 1.7, FINGER_R_K: 1.25, FINGER_SIZE_K: 0.72,
+    ANCHOR_PX: 48, STEP_MS: 100
+  };
+
+  function clamp(v, lo, hi) { return Math.min(Math.max(v, lo), hi); }
+  function angleDeg(dx, dy) { return (Math.atan2(dy, dx) * 180 / Math.PI + 360) % 360; }
+  function axisDir(dx, dy) { return AXIS_ORDER[Math.round(angleDeg(dx, dy) / 45) % 8]; }
+
+  function dragOrigin(o, dx, dy, R, gain) {
+    gain = gain || 1;
+    var ox = (o && o.ox) || 0, oy = (o && o.oy) || 0;
+    var vx = dx - ox, vy = dy - oy;
+    var Rf = R / gain, vl = Math.hypot(vx, vy);
+    if (vl > Rf) {
+      var s = 1 - Rf / vl;
+      ox += vx * s; oy += vy * s;
+      vx = dx - ox; vy = dy - oy;
+    }
+    var ex = vx * gain, ey = vy * gain;
+    return { ox: ox, oy: oy, ex: ex, ey: ey, dist: Math.hypot(ex, ey) };
+  }
+
+  function rowPos(deg) { return (((deg - 180) % 360 + 360) % 360) / 45; }
+
+  function fillRowXs(xsIn, fallback) {
+    var xs = xsIn.slice();
+    for (var i = 0; i < 8; i++) {
+      if (xs[i] !== null && xs[i] !== undefined) continue;
+      var a = i, b = i, da = 0, db = 0;
+      while ((xs[a] === null || xs[a] === undefined) && da < 8) { a = (a + 7) % 8; da++; }
+      while ((xs[b] === null || xs[b] === undefined) && db < 8) { b = (b + 1) % 8; db++; }
+      xs[i] = (xs[a] === null || xs[a] === undefined) ? fallback : (xs[a] * db + xs[b] * da) / (da + db);
+    }
+    return xs;
+  }
+
+  function rowFingerX(ex, ey, xs, cx, minDist) {
+    if (Math.hypot(ex, ey) < (minDist || 0)) return cx;
+    var p = rowPos(angleDeg(ex, ey));
+    var fl = Math.floor(p), k = fl % 8, f = p - fl;
+    if (k === 7) return f < 0.5 ? xs[7] : xs[0];
+    return xs[k] + (xs[k + 1] - xs[k]) * f;
+  }
+
+  function layoutReveal(p) {
+    var r = p.rect, vw = p.vw, vh = p.vh, M = C.MARGIN, GAP = C.GAP;
+    var place = p.place;
+    if (['around', 'wide', 'above', 'row', 'top'].indexOf(place) < 0) place = 'around';
+    var cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+    var bottom = r.top + r.height;
+    var W = r.width, H = r.height;
+    var offs = {
+      up: [0, -H * C.AROUND_K], down: [0, H * C.AROUND_K],
+      left: [-W * C.AROUND_K, 0], right: [W * C.AROUND_K, 0],
+      upleft: [-W * C.DIAG_K, -H * C.DIAG_K], upright: [W * C.DIAG_K, -H * C.DIAG_K],
+      downleft: [-W * C.DIAG_K, H * C.DIAG_K], downright: [W * C.DIAG_K, H * C.DIAG_K]
+    };
+    var dirs = DIRS.filter(function (d) { return !!p.sizes[d]; });
+    var cellW = 0, cellH = 0;
+    dirs.forEach(function (d) { cellW = Math.max(cellW, p.sizes[d].w); cellH = Math.max(cellH, p.sizes[d].h); });
+
+    var out = { cx: cx, cy: cy, place: place, cellW: cellW, cellH: cellH, targets: {}, pad: null, cancelDist: Infinity };
+    var padLike = (place === 'above' || place === 'top' || place === 'row');
+    var rowDirs = ROW_ORDER.filter(function (d) { return !!p.sizes[d]; });
+
+    if (padLike && dirs.length) {
+      var padW = place === 'row' ? cellW * rowDirs.length + GAP * (rowDirs.length - 1) : cellW * 3 + GAP * 2;
+      var padH = place === 'row' ? cellH : cellH * 3 + GAP * 2;
+      var padCx = clamp(cx, padW / 2 + M, vw - padW / 2 - M);
+      var padCy;
+      if (place === 'top') {
+        padCy = M + padH / 2 + C.TOP_EXTRA;
+      } else {
+        padCy = r.top - C.PAD_LIFT - padH / 2;
+        if (padCy - padH / 2 < M) padCy = bottom + C.PAD_LIFT + padH / 2;
+      }
+      var pad = {
+        cx: padCx, cy: padCy, w: padW, h: padH,
+        r: (Math.max(cellW, cellH) + GAP) * C.FINGER_R_K,
+        dot: Math.round(Math.min(cellW, cellH) * C.FINGER_SIZE_K),
+        mode: place === 'row' ? 'row' : 'pad',
+        cells: {}, rowXs: null
+      };
+      if (place === 'row') {
+        rowDirs.forEach(function (d, i) {
+          pad.cells[d] = { x: padCx - padW / 2 + cellW / 2 + i * (cellW + GAP), y: padCy };
+        });
+        pad.rowXs = fillRowXs(ROW_ORDER.map(function (d) { return pad.cells[d] ? pad.cells[d].x : null; }), padCx);
+      } else {
+        dirs.forEach(function (d) {
+          pad.cells[d] = { x: padCx + GRID[d][0] * (cellW + GAP), y: padCy + GRID[d][1] * (cellH + GAP) };
+        });
+      }
+      out.pad = pad;
+    }
+
+    var maxLabelDist = 0;
+    dirs.forEach(function (d) {
+      var halfW = p.sizes[d].w / 2, halfH = p.sizes[d].h / 2;
+      var tx, ty;
+      if (out.pad) {
+        tx = out.pad.cells[d].x; ty = out.pad.cells[d].y;
+      } else {
+        var k = place === 'wide' ? C.WIDE_K : 1;
+        tx = cx + offs[d][0] * k; ty = cy + offs[d][1] * k;
+      }
+      var x = clamp(tx, halfW + M, vw - halfW - M);
+      var y = clamp(ty, halfH + M, vh - halfH - M);
+      out.targets[d] = { x: x, y: y, dx: x - cx, dy: y - cy };
+      var nd = out.pad ? Math.hypot(offs[d][0], offs[d][1]) : Math.hypot(x - cx, y - cy);
+      maxLabelDist = Math.max(maxLabelDist, nd + Math.max(halfW, halfH));
+    });
+    out.cancelDist = maxLabelDist > 0 ? maxLabelDist + C.CANCEL_PAD : Infinity;
+    return out;
+  }
+
+  function evalPick(st, L, dx, dy, gain, isOk) {
+    var ex = dx, ey = dy, dist = Math.hypot(dx, dy);
+    if (L.pad) {
+      var o = dragOrigin(st, dx, dy, L.pad.r, gain);
+      st.ox = o.ox; st.oy = o.oy; ex = o.ex; ey = o.ey; dist = o.dist;
+    }
+    var dir = null;
+    if (dist > C.MOVE_PX) {
+      var tooFar = !L.pad && dist > L.cancelDist;
+      var d = axisDir(ex, ey);
+      if (!tooFar && isOk(d)) dir = d;
+    }
+    return { dir: dir, ex: ex, ey: ey, dist: dist };
+  }
+
+  function holdToSetValue(ms, o) {
+    o = o || {};
+    var comp = o.compensateMs != null ? o.compensateMs : 150;
+    var min = o.minMs != null ? o.minMs : 300;
+    var max = o.maxMs != null ? o.maxMs : 8000;
+    var step = o.stepMs || C.STEP_MS;
+    if (ms < min) return null;
+    return clamp(Math.round((ms - comp) / step) * step, min, max);
+  }
+
+  function swipeDir(dx, dy, threshold) {
+    if (-dy > threshold && -dy > Math.abs(dx)) return 'up';
+    if (dy > threshold && dy > Math.abs(dx)) return 'down';
+    return null;
+  }
+
+  function edgeHit(y, vh, edge) {
+    return edge > 0 && (y < edge || y > vh - edge);
+  }
+
+  function isAction(a) {
+    return a !== null && a !== undefined && a !== false && !(typeof a === 'object' && a.type === 'none');
+  }
+  function hasAnyAction(actions) {
+    return !!actions && DIRS.some(function (d) { return isAction(actions[d]); });
+  }
+
+  function resolve(v) { return typeof v === 'function' ? v() : v; }
+  function now() { return (win && win.performance && win.performance.now) ? win.performance.now() : Date.now(); }
+  function capture(el, id) { try { el.setPointerCapture(id); } catch (err) { /* 無視 */ } }
+  function release(el, id) { try { if (el.hasPointerCapture && el.hasPointerCapture(id)) el.releasePointerCapture(id); } catch (err) { /* 無視 */ } }
+  function isSecondaryMouse(e) { return e.pointerType === 'mouse' && e.button !== 0; }
+  function closest(el, sel) { return !!(sel && el && el.closest && el.closest(sel)); }
+  function px(n) { return Math.round(n * 100) / 100 + 'px'; }
+  function rAF(fn) { return (win.requestAnimationFrame || function (f) { return setTimeout(f, 16); })(fn); }
+
+  var active = null;
+  var scrimEl = null;
+
+  function setScrim(on) {
+    if (!scrimEl) {
+      scrimEl = doc.createElement('div');
+      scrimEl.className = 'pg-scrim';
+      doc.body.appendChild(scrimEl);
+    }
+    scrimEl.classList.toggle('on', on);
+  }
+
+  function defaultRender(dir, action) {
+    var t;
+    if (action && typeof action === 'object') t = action.label != null ? action.label : (action.text != null ? action.text : dir);
+    else t = String(action);
+    return doc.createTextNode(String(t));
+  }
+
+  function glyph(svgMarkup, ariaLabel) {
+    var s = doc.createElement('span');
+    s.className = 'pg-glyph';
+    s.innerHTML = svgMarkup;
+    if (ariaLabel) s.setAttribute('aria-label', ariaLabel);
+    return s;
+  }
+
+  function showReveal(rect, actions, cfg) {
+    hideReveal();
+    var place = resolve(cfg.place) || 'around';
+    var render = typeof cfg.render === 'function' ? cfg.render : defaultRender;
+    var cx = rect.left + rect.width / 2, cy = rect.top + rect.height / 2;
+    var made = [];
+    DIRS.forEach(function (dir) {
+      var a = actions[dir];
+      if (!isAction(a)) return;
+      var el = doc.createElement('div');
+      el.className = 'pg-label';
+      el.setAttribute('data-dir', dir);
+      var c = render(dir, a);
+      if (c === null || c === undefined) c = defaultRender(dir, a);
+      if (typeof c === 'string' || typeof c === 'number') c = doc.createTextNode(String(c));
+      el.appendChild(c);
+      if (c.nodeType === 1 && (c.classList.contains('pg-glyph') || c.tagName === 'IMG' || c.hasAttribute('data-pg-icon'))) {
+        el.classList.add('pg-as-icon');
+      }
+      el.style.left = px(cx);
+      el.style.top = px(cy);
+      doc.body.appendChild(el);
+      made.push({ dir: dir, el: el });
+    });
+    var sizes = {};
+    made.forEach(function (m) { sizes[m.dir] = { w: m.el.offsetWidth, h: m.el.offsetHeight }; });
+    var L = layoutReveal({ rect: rect, place: place, sizes: sizes, vw: win.innerWidth, vh: win.innerHeight });
+    setScrim(true);
+
+    var R = { els: made, L: L, gain: cfg.gain || 1, ox: 0, oy: 0, pickDir: null, fingerEl: null };
+    if (L.pad && cfg.fingerDot !== false) {
+      var fg = doc.createElement('div');
+      fg.className = 'pg-finger';
+      fg.style.left = px(L.pad.cx);
+      fg.style.top = px(L.pad.cy);
+      fg.style.width = fg.style.height = L.pad.dot + 'px';
+      doc.body.appendChild(fg);
+      R.fingerEl = fg;
+    }
+    rAF(function () {
+      if (active !== R) return;
+      made.forEach(function (m) {
+        var t = L.targets[m.dir];
+        m.el.classList.add('on');
+        m.el.style.transform = 'translate(calc(-50% + ' + px(t.dx) + '), calc(-50% + ' + px(t.dy) + ')) scale(1)';
+      });
+      if (R.fingerEl) R.fingerEl.classList.add('on');
+    });
+    active = R;
+    return R;
+  }
+
+  function hideReveal(R) {
+    if (R && active !== R) return;
+    if (active) {
+      active.els.forEach(function (m) { if (m.el.parentNode) m.el.parentNode.removeChild(m.el); });
+      if (active.fingerEl && active.fingerEl.parentNode) active.fingerEl.parentNode.removeChild(active.fingerEl);
+      active = null;
+    }
+    if (scrimEl) scrimEl.classList.remove('on');
+  }
+
+  function moveFinger(R, ex, ey) {
+    if (!R.fingerEl) return;
+    var pad = R.L.pad;
+    if (pad.mode === 'row') {
+      var tx = rowFingerX(ex, ey, pad.rowXs, pad.cx, C.MOVE_PX) - pad.cx;
+      R.fingerEl.style.transform = 'translate(calc(-50% + ' + px(tx) + '), -50%)';
+      return;
+    }
+    var len = Math.hypot(ex, ey);
+    var k = len > pad.r ? pad.r / len : 1;
+    R.fingerEl.style.transform = 'translate(calc(-50% + ' + px(ex * k) + '), calc(-50% + ' + px(ey * k) + '))';
+  }
+
+  function trackReveal(R, dx, dy, actions) {
+    var res = evalPick(R, R.L, dx, dy, R.gain, function (d) { return isAction(actions[d]); });
+    R.pickDir = res.dir;
+    R.els.forEach(function (m) { m.el.classList.toggle('picking', !!res.dir && m.dir === res.dir); });
+    moveFinger(R, res.ex, res.ey);
+    return res;
+  }
+
+  function background(rootEl, o) {
+    o = o || {};
+    var longMs = o.longPressMs != null ? o.longPressMs : 2000;
+    var useGauge = o.gauge !== false;
+    var gDelay = o.gaugeDelayMs != null ? o.gaugeDelayMs : 40;
+    var gOffY = o.gaugeOffsetY != null ? o.gaugeOffsetY : -64;
+    var edgeOpt = o.edgeExclude !== undefined ? o.edgeExclude : function () { return Math.max(56, win.innerHeight * 0.1); };
+    var rv = o.reveal || null;
+    var ignoreSel = '.pg-target, .pg-holdset, .pg-label' + (o.ignore ? ', ' + o.ignore : '');
+    var st = null;
+    var gaugeEl = null;
+
+    rootEl.classList.add('pg-bg');
+
+    function ensureGauge() {
+      if (gaugeEl) return gaugeEl;
+      gaugeEl = doc.createElement('div');
+      gaugeEl.className = 'pg-gauge';
+      gaugeEl.innerHTML = '<svg viewBox="0 0 60 60" width="60" height="60">'
+        + '<circle class="pg-track" cx="30" cy="30" r="24"/>'
+        + '<circle class="pg-fill" cx="30" cy="30" r="24"/></svg>';
+      doc.body.appendChild(gaugeEl);
+      return gaugeEl;
+    }
+    function stopTimers() {
+      if (!st) return;
+      if (st.timer) { clearTimeout(st.timer); st.timer = null; }
+      if (st.gaugeTimer) { clearTimeout(st.gaugeTimer); st.gaugeTimer = null; }
+      if (gaugeEl) gaugeEl.classList.remove('on');
+    }
+    function reset() {
+      if (!st) return;
+      stopTimers();
+      if (st.R) hideReveal(st.R);
+      release(rootEl, st.id);
+      st = null;
+    }
+
+    function fire() {
+      var s = st;
+      if (!s) return;
+      s.timer = null;
+      stopTimers();
+      if (doc.hidden) { reset(); return; }
+      s.fired = true;
+      var ctx = { x: s.sx, y: s.sy };
+      var ret = o.onLongPress ? o.onLongPress(ctx) : undefined;
+      if (st !== s) return;
+      var acts = rv ? (resolve(rv.actions) || {}) : {};
+      if (ret === false || !rv || !hasAnyAction(acts)) {
+        reset();
+        if (o.onHold) o.onHold(ctx);
+        return;
+      }
+      s.acts = acts;
+      var A = C.ANCHOR_PX;
+      s.R = showReveal({ left: s.sx - A / 2, top: s.sy - A / 2, width: A, height: A }, acts, rv);
+    }
+
+    function down(e) {
+      if (st || isSecondaryMouse(e)) return;
+      if (closest(e.target, ignoreSel)) return;
+      var edge = +resolve(edgeOpt) || 0;
+      if (edgeHit(e.clientY, win.innerHeight, edge)) return;
+      st = { id: e.pointerId, sx: e.clientX, sy: e.clientY, timer: null, gaugeTimer: null, fired: false, R: null, acts: null };
+      capture(rootEl, e.pointerId);
+      var ms = Math.max(0, +resolve(longMs) || 0);
+      if (useGauge) {
+        var g = ensureGauge();
+        g.classList.remove('on');
+        g.style.left = px(st.sx);
+        g.style.top = px(st.sy + gOffY);
+        g.style.setProperty('--pg-gauge-ms', Math.max(50, ms - gDelay) + 'ms');
+        st.gaugeTimer = setTimeout(function () { if (st) { st.gaugeTimer = null; g.classList.add('on'); } }, gDelay);
+      }
+      st.timer = setTimeout(fire, ms);
+    }
+
+    function move(e) {
+      if (!st || e.pointerId !== st.id) return;
+      var dx = e.clientX - st.sx, dy = e.clientY - st.sy;
+      if (st.R) { trackReveal(st.R, dx, dy, st.acts); return; }
+      if (st.timer && Math.hypot(dx, dy) > C.MOVE_PX) stopTimers();
+    }
+
+    function up(e) {
+      if (!st || e.pointerId !== st.id) return;
+      var s = st;
+      var ctx = { x: s.sx, y: s.sy };
+      stopTimers();
+      release(rootEl, s.id);
+      st = null;
+      if (s.R) {
+        var dir = s.R.pickDir;
+        hideReveal(s.R);
+        if (dir) { if (o.onPick) o.onPick(dir, s.acts[dir]); }
+        else if (o.onHold) o.onHold(ctx);
+        return;
+      }
+      if (!s.fired && o.swipe) {
+        var sd = swipeDir(e.clientX - s.sx, e.clientY - s.sy, o.swipe.thresholdPx != null ? o.swipe.thresholdPx : 90);
+        if (sd === 'up' && o.swipe.onUp) o.swipe.onUp();
+        else if (sd === 'down' && o.swipe.onDown) o.swipe.onDown();
+      }
+    }
+
+    function cancel(e) { if (st && (!e || e.pointerId === st.id)) reset(); }
+    function onVis() { if (doc.hidden) reset(); }
+    function onCtx(e) { if (st) e.preventDefault(); }
+
+    rootEl.addEventListener('pointerdown', down);
+    rootEl.addEventListener('pointermove', move);
+    rootEl.addEventListener('pointerup', up);
+    rootEl.addEventListener('pointercancel', cancel);
+    rootEl.addEventListener('contextmenu', onCtx);
+    doc.addEventListener('visibilitychange', onVis);
+
+    return {
+      destroy: function () {
+        reset();
+        rootEl.removeEventListener('pointerdown', down);
+        rootEl.removeEventListener('pointermove', move);
+        rootEl.removeEventListener('pointerup', up);
+        rootEl.removeEventListener('pointercancel', cancel);
+        rootEl.removeEventListener('contextmenu', onCtx);
+        doc.removeEventListener('visibilitychange', onVis);
+        rootEl.classList.remove('pg-bg');
+        if (gaugeEl && gaugeEl.parentNode) gaugeEl.parentNode.removeChild(gaugeEl);
+        gaugeEl = null;
+      }
+    };
+  }
+
+  function target(el, o) {
+    o = o || {};
+    var holdMs = o.holdCancelMs != null ? o.holdCancelMs : 400;
+    var st = null;
+
+    el.classList.add('pg-target');
+
+    function reset() {
+      if (!st) return;
+      if (st.timer) clearTimeout(st.timer);
+      if (st.R) hideReveal(st.R);
+      release(el, st.id);
+      st = null;
+    }
+
+    function down(e) {
+      if (st || isSecondaryMouse(e)) return;
+      var acts = resolve(o.actions) || {};
+      st = { id: e.pointerId, x0: e.clientX, y0: e.clientY, held: false, picking: false, timer: null, R: null, acts: acts };
+      capture(el, e.pointerId);
+      if (hasAnyAction(acts)) {
+        st.R = showReveal(el.getBoundingClientRect(), acts, o);
+        st.timer = setTimeout(function () { if (st) st.held = true; }, holdMs);
+      }
+    }
+
+    function move(e) {
+      if (!st || e.pointerId !== st.id || !st.R) return;
+      var res = trackReveal(st.R, e.clientX - st.x0, e.clientY - st.y0, st.acts);
+      if (res.dist > C.MOVE_PX) st.picking = true;
+    }
+
+    function up(e) {
+      if (!st || e.pointerId !== st.id) return;
+      var s = st;
+      if (s.timer) clearTimeout(s.timer);
+      release(el, s.id);
+      st = null;
+      var dir = s.R ? s.R.pickDir : null;
+      if (s.R) hideReveal(s.R);
+      if (s.picking) { if (dir && o.onPick) o.onPick(dir, s.acts[dir]); return; }
+      if (s.R && s.held) return;
+      if (o.onTap) o.onTap();
+    }
+
+    function cancel(e) { if (st && (!e || e.pointerId === st.id)) reset(); }
+    function onVis() { if (doc.hidden) reset(); }
+    function onCtx(e) { e.preventDefault(); }
+
+    el.addEventListener('pointerdown', down);
+    el.addEventListener('pointermove', move);
+    el.addEventListener('pointerup', up);
+    el.addEventListener('pointercancel', cancel);
+    el.addEventListener('contextmenu', onCtx);
+    doc.addEventListener('visibilitychange', onVis);
+
+    return {
+      destroy: function () {
+        reset();
+        el.removeEventListener('pointerdown', down);
+        el.removeEventListener('pointermove', move);
+        el.removeEventListener('pointerup', up);
+        el.removeEventListener('pointercancel', cancel);
+        el.removeEventListener('contextmenu', onCtx);
+        doc.removeEventListener('visibilitychange', onVis);
+        el.classList.remove('pg-target');
+      }
+    };
+  }
+
+  function holdToSet(btn, o) {
+    o = o || {};
+    var idle = o.label || 'ここを、決めたい長さだけ押し続けて離す';
+    var minMs = o.minMs != null ? o.minMs : 300;
+    var t0 = 0, tick = null, back = null, id = null;
+    var sec = function (ms) { return (ms / 1000).toFixed(1) + '秒'; };
+
+    btn.classList.add('pg-holdset');
+    btn.textContent = idle;
+
+    function stop(save) {
+      if (tick) { clearInterval(tick); tick = null; }
+      if (id !== null) { release(btn, id); id = null; }
+      if (!t0) return;
+      var ms = now() - t0;
+      t0 = 0;
+      if (save) {
+        var v = holdToSetValue(ms, o);
+        if (v === null) {
+          btn.textContent = '短すぎます（' + sec(minMs) + '以上押してください）';
+        } else {
+          btn.textContent = sec(v) + 'に決めました';
+          if (o.onSet) o.onSet(v, ms);
+        }
+      } else {
+        btn.textContent = idle;
+      }
+      if (back) clearTimeout(back);
+      back = setTimeout(function () { back = null; btn.textContent = idle; }, 1600);
+    }
+    function down(e) {
+      if (t0 || isSecondaryMouse(e)) return;
+      e.preventDefault();
+      id = e.pointerId;
+      capture(btn, id);
+      if (back) { clearTimeout(back); back = null; }
+      t0 = now();
+      btn.textContent = '0.0秒…';
+      tick = setInterval(function () { btn.textContent = sec(now() - t0) + '…'; }, 100);
+    }
+    function up() { stop(true); }
+    function cancel() { stop(false); }
+    function onCtx(e) { e.preventDefault(); }
+
+    btn.addEventListener('pointerdown', down);
+    btn.addEventListener('pointerup', up);
+    btn.addEventListener('pointercancel', cancel);
+    btn.addEventListener('contextmenu', onCtx);
+
+    return {
+      destroy: function () {
+        stop(false);
+        if (back) { clearTimeout(back); back = null; }
+        btn.removeEventListener('pointerdown', down);
+        btn.removeEventListener('pointerup', up);
+        btn.removeEventListener('pointercancel', cancel);
+        btn.removeEventListener('contextmenu', onCtx);
+        btn.classList.remove('pg-holdset');
+      }
+    };
+  }
+
+  return {
+    version: '1.0.0',
+    DIRS: DIRS.slice(),
+    background: background,
+    target: target,
+    holdToSet: holdToSet,
+    glyph: glyph,
+    hideReveal: function () { hideReveal(); },
+    _math: {
+      C: C, AXIS_ORDER: AXIS_ORDER, ROW_ORDER: ROW_ORDER,
+      clamp: clamp, angleDeg: angleDeg, axisDir: axisDir, dragOrigin: dragOrigin,
+      rowPos: rowPos, fillRowXs: fillRowXs, rowFingerX: rowFingerX,
+      layoutReveal: layoutReveal, evalPick: evalPick, holdToSetValue: holdToSetValue,
+      swipeDir: swipeDir, edgeHit: edgeHit, isAction: isAction, hasAnyAction: hasAnyAction
+    }
+  };
+});
+</script>
 
 <script>
 (function(){
@@ -1513,10 +2233,11 @@
   // クイック追加バーと同じ「その場でinput→Enter/ボタンで確定」に統一する。
   var addingQuickTag = false;
   var renamingQuickTagIdx = -1;
-  // ワードボタンの長押し→その場で名前編集。⚠ここもprompt()は使わない
-  // (動画の映像/音声を止めないよう、上のクイック追加バー・+追加チップと
-  // 同じinput方式に統一する。2026-09-07ユーザー指示)。
-  var QUICK_TAG_LONG_PRESS_MS = 500;
+  // ワードボタンの長押し→リネーム/削除の升目メニュー(press-gestures.js)。
+  // ⚠リネームの中身入力自体はprompt()を使わない(動画の映像/音声を止めない
+  // ため。上のクイック追加バー・+追加チップと同じinput方式に統一する。
+  // 2026-09-07ユーザー指示)。「削除」はメニューから直接実行(確認ダイアログ無し
+  // =既存のprompt/confirm禁止ルールに合わせる。2026-09-25、press-gestures導入)。
   function renderQuickTags(container, onTap){
     if(renamingQuickTagIdx>=0){
       var set0 = activeTagSet();
@@ -1604,34 +2325,30 @@
     html += '<button type="button" class="chip add" id="quickAddTagChip">＋追加</button>';
     container.innerHTML = html;
     container.querySelectorAll('.chip[data-tag]').forEach(function(el){
-      // タップ=スタンプ挿入、長押し=その場で名前編集。長押しが発火した回だけ
-      // タップ側(click)を無効化する(⚙長押し更新ボタンと同じガード方式)。
-      var pressTimer = null;
-      var longPressFired = false;
-      function start(){
-        longPressFired = false;
-        clearTimeout(pressTimer);
-        el.classList.add('pressing');
-        pressTimer = setTimeout(function(){
-          longPressFired = true;
-          el.classList.remove('pressing');
-          if(navigator.vibrate) navigator.vibrate(15);
-          renamingQuickTagIdx = parseInt(el.dataset.idx, 10);
-          renderQuickTags(container, onTap);
-        }, QUICK_TAG_LONG_PRESS_MS);
-      }
-      function cancelHold(){
-        clearTimeout(pressTimer);
-        el.classList.remove('pressing');
-      }
-      el.addEventListener('pointerdown', start);
-      el.addEventListener('pointerup', cancelHold);
-      el.addEventListener('pointerleave', cancelHold);
-      el.addEventListener('pointercancel', cancelHold);
-      el.addEventListener('contextmenu', function(e){ e.preventDefault(); });
-      el.addEventListener('click', function(e){
-        if(longPressFired){ longPressFired = false; e.preventDefault(); return; }
-        onTap(el.dataset.tag);
+      // タップ=スタンプ挿入、長押し=升目メニュー(上=リネーム/下=削除)。
+      // press-gestures.jsのtarget()は触った瞬間に升目を出し、動かさず離した
+      // 場合はタップ扱い(onTap)にしてくれる。
+      PressGestures.target(el, {
+        actions: { up: {label:'リネーム'}, down: {label:'削除'} },
+        place: 'around',
+        render: function(dir, action){
+          var span = document.createElement('span');
+          span.textContent = action.label;
+          if(dir === 'down') span.style.color = 'var(--danger)';
+          return span;
+        },
+        onTap: function(){ onTap(el.dataset.tag); },
+        onPick: function(dir){
+          var idx = parseInt(el.dataset.idx, 10);
+          if(dir === 'up'){
+            renamingQuickTagIdx = idx;
+            renderQuickTags(container, onTap);
+          } else if(dir === 'down'){
+            activeTagSet().tags.splice(idx, 1);
+            save();
+            renderQuickTags(container, onTap);
+          }
+        }
       });
     });
     var addChip = document.getElementById('quickAddTagChip');
