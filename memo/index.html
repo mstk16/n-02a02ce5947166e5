@@ -1537,6 +1537,15 @@
     var d = new Date(ms);
     return d.getFullYear()+'/'+pad(d.getMonth()+1)+'/'+pad(d.getDate())+' '+pad(d.getHours())+':'+pad(d.getMinutes());
   }
+  // formatElapsedの逆(タイムスタンプタップジャンプ用・2026-09-25)。
+  // "MM:SS" / "H:MM:SS" 以外はnull
+  function parseTimestampStr(str){
+    var m = String(str).match(/^(?:(\d+):)?(\d{1,2}):(\d{2})$/);
+    if(!m) return null;
+    var hh = parseInt(m[1]||'0', 10), mm = parseInt(m[2], 10), ss = parseInt(m[3], 10);
+    if(mm>=60 || ss>=60) return null;
+    return hh*3600 + mm*60 + ss;
+  }
 
   function currentElapsedSec(session){
     if(!session) return 0;
@@ -1807,13 +1816,31 @@
   // メン限(メンバー限定)動画をChrome Custom Tabsで開く。本物のChromeなので
   // Googleサインイン・メンバーシップ確認込みで視聴できる(WebView埋め込みでは
   // ブロックされる・2026-09-25実機検証)。橋渡しが無い環境(通常ブラウザでの
-  // 動作確認等)ではnew tabで開くだけにフォールバックする。
-  function openInCustomTab(videoId){
+  // 動作確認等)ではnew tabで開くだけにフォールバックする。startSecを渡すと
+  // その位置から開始する(メモのタイムスタンプタップジャンプ用)。
+  function openInCustomTab(videoId, startSec){
     if(!videoId) return;
+    var sec = Math.max(0, Math.floor(startSec||0));
     if(window.AndroidVideo && window.AndroidVideo.openInCustomTab){
-      window.AndroidVideo.openInCustomTab(videoId);
+      window.AndroidVideo.openInCustomTab(videoId, sec);
     } else {
-      window.open('https://www.youtube.com/watch?v=' + videoId, '_blank');
+      var url = 'https://www.youtube.com/watch?v=' + videoId + (sec>0 ? ('&t='+sec+'s') : '');
+      window.open(url, '_blank');
+    }
+  }
+
+  // メモ欄のタイムスタンプをタップしたら、その位置へ動画をジャンプさせる
+  // (2026-09-25ユーザー指示)。埋め込みプレーヤーがあればseekTo、Custom
+  // Tabsモードならその時刻付きURLで開き直す。動画未連携なら何もしない。
+  function seekToTimestamp(str, session){
+    if(!session || !session.ytVideoId) return;
+    var sec = parseTimestampStr(str);
+    if(sec === null) return;
+    var target = Math.max(0, sec - (session.ytOffsetSec||0));
+    if(ytPlayer && ytPlayerSessionId === session.id){
+      try{ ytPlayer.seekTo(target, true); ytPlayer.playVideo(); }catch(e){}
+    } else if(session.ytCustomTab){
+      openInCustomTab(session.ytVideoId, target);
     }
   }
 
@@ -2433,6 +2460,29 @@
     var s = ensureActiveSession();
     s.noteText = quickMemoTextEl.value;
     save();
+  });
+
+  // メモ欄のタイムスタンプ("12:34"等)をタップしたらそこへ動画をジャンプ。
+  // 選択ドラッグ中(selectionStart!==selectionEnd)は何もしない。タップ位置が
+  // その行のタイムスタンプ文字列の範囲に入っている時だけ発火する(それ以外は
+  // 従来通り普通にカーソルが置かれるだけ)。2026-09-25ユーザー指示。
+  quickMemoTextEl.addEventListener('click', function(){
+    var el = quickMemoTextEl;
+    if(el.selectionStart !== el.selectionEnd) return;
+    var text = el.value, pos = el.selectionStart;
+    var lineStart = text.lastIndexOf('\n', pos-1) + 1;
+    var lineEndIdx = text.indexOf('\n', pos);
+    var lineEnd = lineEndIdx === -1 ? text.length : lineEndIdx;
+    var line = text.slice(lineStart, lineEnd);
+    var posInLine = pos - lineStart;
+    var re = /\d{1,2}(?::\d{2}){1,2}/g, m;
+    while((m = re.exec(line))){
+      var s0 = m.index, e0 = s0 + m[0].length;
+      if(posInLine >= s0 && posInLine <= e0){
+        seekToTimestamp(m[0], activeSession());
+        return;
+      }
+    }
   });
 
   function renderHome(){
