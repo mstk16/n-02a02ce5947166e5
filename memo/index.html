@@ -238,8 +238,14 @@
   /* URL貼り付け・検索は一行入力欄なので、広い画面でも際限なく伸ばさない
      (2026-09-26ユーザー指摘「上の検索帯の幅もむだ」)。#ytLinkSectionは
      履歴画面(historyView)のトップにあり、動画未連携で#appがフル幅に
-     広がる状態でも、この枠だけは読みやすい幅で頭打ちにする */
-  #ytLinkSection{max-width:480px;}
+     広がる状態でも、この枠だけは読みやすい幅で頭打ちにする。
+     ⚠単純にmax-widthだけ付けると右側だけ余って「詰めた分がそのまま
+     片側の余白に移っただけ」になる(2026-09-26指摘「デッドスペース考えて」)。
+     実機の実測(履歴画面の使用可能幅は約637〜700px)だと、フォームの隣に
+     履歴グリッドを並べるには狭すぎて2列グリッドが機能しない→中央寄せに
+     して左右均等の「意図した余白」にする(片側だけ余る＝事故に見える余白を
+     解消する)。 */
+  #ytLinkSection{max-width:480px; margin-left:auto; margin-right:auto;}
   #ytLinkSection .field-label, .yt-settings .field-label{ color:var(--accent); margin-top:0; }
   .yt-settings.hidden{display:none;}
   /* ⚠#ytLinkSectionには元々.hiddenを隠すCSSルールが無く、連携済み中も
