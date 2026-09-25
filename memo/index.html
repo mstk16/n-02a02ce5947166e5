@@ -1122,7 +1122,12 @@
     if (L.pad && cfg.fingerDot !== false) {
       var fg = doc.createElement('div');
       fg.className = 'pg-finger';
-      fg.style.left = px(L.pad.cx);
+      // ⚠横位置は本当のタッチ位置(cx)を使う。L.pad.cxは画面端で升目を収めるための
+      //   クランプ済み中心なので、対象が画面端に近いとpad.cxが本当の指の位置から
+      //   大きくズレ、赤丸(指の代理)が最初から指と無関係な場所に出てしまう
+      //   (2026-09-25発覚: 画面端のタグボタンで左方向の升目が事実上押せない不具合)。
+      //   縦位置(cy→L.pad.cy)は「指1本ぶん上に出す」意図的な演出なのでそのまま使う。
+      fg.style.left = px(cx);
       fg.style.top = px(L.pad.cy);
       fg.style.width = fg.style.height = L.pad.dot + 'px';
       doc.body.appendChild(fg);
