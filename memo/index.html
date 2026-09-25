@@ -1908,6 +1908,16 @@
     }).catch(function(){});
   }
 
+  // 既存セッション(動画IDは持っているがタイトル未取得のまま=この機能を
+  // 入れる前に連携した分)を起動時に1回だけ遡って取得する(2026-09-26)。
+  // 15件同時に投げず少し間隔を空ける(行儀のため・件数が多い環境向けの保険)。
+  function backfillYtTitles(){
+    var targets = state.sessions.filter(function(s){ return s.ytVideoId && !s.ytTitle; });
+    targets.forEach(function(s, i){
+      setTimeout(function(){ fetchYtOembedInfo(s, s.ytVideoId); }, i * 250);
+    });
+  }
+
   function unlinkYouTube(session){
     destroyYtPlayer();
     if(session){ session.ytVideoId = null; session.ytCustomTab = false; save(); }
@@ -3201,6 +3211,7 @@
   // コールドスタート(ホーム画面アイコンから起動)はvisibilitychangeが発火しない
   // ので、初回表示時にも1回クリップボードを確認しておく
   checkClipboardForYouTubeLink();
+  backfillYtTitles(); // 既存セッションのタイトル・サムネイルを遡って取得(起動1回だけ)
 
   // アプデ検知(2026-09-24ユーザー指示: 「アプデがあります。更新しますか？」を
   // 出して自動で更新してほしい)。sw.jsのinstallハンドラは既にskipWaiting()を
