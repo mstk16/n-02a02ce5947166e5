@@ -68,8 +68,23 @@
     #videoPane{
       display:flex; flex-direction:column; height:100dvh; min-width:0;
       flex:1.15 1.15 0%;
-      border-right:1px solid var(--border); background:#000;
+      background:#000;
     }
+    /* 境目線は#paneDividerが担う(2026-09-25)。以前は#videoPane自身の
+       border-right/border-leftで線を引いていたが、ドラッグハンドルを
+       挟む都合で分離した */
+    .pane-divider{
+      display:none; flex:0 0 auto; width:14px; cursor:col-resize;
+      position:relative; touch-action:none; -webkit-user-select:none; user-select:none;
+    }
+    .pane-divider::after{
+      content:''; position:absolute; left:50%; top:0; bottom:0; width:1px;
+      background:var(--border); transform:translateX(-50%);
+    }
+    .pane-divider:active::after, .pane-divider.dragging::after{
+      background:var(--accent); width:2px;
+    }
+    #root.video-split .pane-divider{ display:block; }
     .video-box{flex:0 0 auto;}
     /* 動画が連携されていない間は#videoPane自体が非表示(.hidden)になるので、
        空のチャット欄がflex:1で場所を占領して#homeViewを潰さないよう、
@@ -113,7 +128,8 @@
        入れ替えられるように(⚙設定から切替)。DOM順は変えずflexのorderだけ動かす。
        各要素は自分自身にflex-basisを持つ(上記)ので、orderで位置を動かしても
        サイズは中身に固定されたまま入れ替わらない */
-    #root.swap-panes #videoPane{ order:2; border-right:none; border-left:1px solid var(--border); }
+    #root.swap-panes #videoPane{ order:3; }
+    #root.swap-panes .pane-divider{ order:2; }
     #root.swap-panes #app{ order:1; }
   }
 
@@ -650,6 +666,9 @@
   <!-- 内画面ではここに#controlsGroupが移動してくる(JS側で制御)。
        チャットの下に操作を置きたい、というユーザー指示(2026-09-06)への対応 -->
 </div>
+<!-- 動画/チャット⇄メモの境目をドラッグして幅を調整するハンドル(2026-09-25)。
+     シアターモード(横長)でのみCSSで表示する -->
+<div id="paneDivider" class="pane-divider" aria-hidden="true"></div>
 <div id="app">
 
   <!-- チャットは常にここ(#app側)に置く。内画面(シアターモード)でだけ
@@ -1444,6 +1463,7 @@
       activeTagSetId: 'default',
       ytApiKey: '',
       swapPanes: false,
+      paneRatio: null, // 動画側の取り分(0..1)。nullならCSS既定値(1.15:0.85)のまま
       showGuestInput: false,
       pcSyncKey: '',
       pcSyncHost: '',
@@ -1597,6 +1617,77 @@
     var vp = document.getElementById('videoPane');
     return isTheaterMode() && !!vp && !vp.classList.contains('hidden');
   }
+
+  // ---------- 動画/チャット⇄メモの境目ドラッグ調整(2026-09-25) ----------
+  // #videoPaneと#appのflex-basisを直接pxで指定する代わりに比率(0..1=動画側の
+  // 取り分)で持ち、インラインstyleのflexで上書きする。インラインstyleは
+  // 常にCSSの@media(min-width:700px)ルールに勝つので、シアターモードでない
+  // (=#rootがflexコンテナでない)時は単に無視されるだけで安全。
+  var PANE_MIN_PX = 260; // 動画側・メモ側とも、これより狭くはしない
+  function applyPaneRatio(ratio){
+    var videoPane = document.getElementById('videoPane');
+    var app = document.getElementById('app');
+    if(!videoPane || !app) return;
+    if(ratio == null){
+      videoPane.style.flex = '';
+      app.style.flex = '';
+      return;
+    }
+    ratio = Math.min(0.8, Math.max(0.2, ratio));
+    videoPane.style.flex = ratio + ' ' + ratio + ' 0%';
+    app.style.flex = (1 - ratio) + ' ' + (1 - ratio) + ' 0%';
+  }
+  (function initPaneDivider(){
+    var divider = document.getElementById('paneDivider');
+    var root = document.getElementById('root');
+    if(!divider || !root) return;
+    var drag = null;
+    function onMove(e){
+      if(!drag) return;
+      var dx = e.clientX - drag.startX;
+      // swap-panes中は動画側が右に来るので、指を右へ動かした時の効果が逆になる
+      var videoDelta = drag.swapped ? -dx : dx;
+      var videoPx = Math.min(drag.totalW - PANE_MIN_PX, Math.max(PANE_MIN_PX, drag.startVideoW + videoDelta));
+      applyPaneRatio(videoPx / drag.totalW);
+    }
+    function onUp(){
+      if(!drag) return;
+      state.paneRatio = Math.min(0.8, Math.max(0.2, drag.lastVideoPx / drag.totalW));
+      save();
+      divider.classList.remove('dragging');
+      document.removeEventListener('pointermove', onMoveTrack);
+      document.removeEventListener('pointerup', onUp);
+      document.removeEventListener('pointercancel', onUp);
+      drag = null;
+    }
+    // onMoveで最後のvideoPxも覚えておく(保存用)。onMove自体はratio計算に
+    // クランプ後の値を使っているので、そのクランプ後pxを保存にも使い回す
+    function onMoveTrack(e){
+      if(!drag) return;
+      var dx = e.clientX - drag.startX;
+      var videoDelta = drag.swapped ? -dx : dx;
+      drag.lastVideoPx = Math.min(drag.totalW - PANE_MIN_PX, Math.max(PANE_MIN_PX, drag.startVideoW + videoDelta));
+      applyPaneRatio(drag.lastVideoPx / drag.totalW);
+    }
+    divider.addEventListener('pointerdown', function(e){
+      var videoPane = document.getElementById('videoPane');
+      if(!videoPane) return;
+      var rootRect = root.getBoundingClientRect();
+      var dividerRect = divider.getBoundingClientRect();
+      drag = {
+        startX: e.clientX,
+        startVideoW: videoPane.getBoundingClientRect().width,
+        totalW: rootRect.width - dividerRect.width,
+        swapped: root.classList.contains('swap-panes'),
+        lastVideoPx: videoPane.getBoundingClientRect().width
+      };
+      divider.classList.add('dragging');
+      try{ divider.setPointerCapture(e.pointerId); }catch(err){}
+      document.addEventListener('pointermove', onMoveTrack);
+      document.addEventListener('pointerup', onUp);
+      document.addEventListener('pointercancel', onUp);
+    });
+  })();
 
   // 動画連携中の広い画面では操作(タグ行・クイック追加バー・下帯)を丸ごと
   // #videoPane側(チャットの下)へ移動する。それ以外では#appの元の位置
@@ -2954,6 +3045,7 @@
   })();
 
   // ---------- 初期化 ----------
+  applyPaneRatio(state.paneRatio); // 保存済みの境目位置を復元(未保存ならCSS既定のまま)
   relocateControlsForMode(); // 起動時点で内画面ならチャットの下に操作を出しておく
   showView('home');
   // コールドスタート(ホーム画面アイコンから起動)はvisibilitychangeが発火しない
