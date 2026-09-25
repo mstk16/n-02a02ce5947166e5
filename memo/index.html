@@ -345,6 +345,7 @@
     padding:6px 8px; border-radius:8px; cursor:pointer;
   }
   .navchip.active{color:var(--accent);}
+  .navchip.hidden{display:none;}
   .navchip:active, .iconbtn:active{background:var(--panel2);}
 
   /* 🕐の隣に置く常設編集ボタン。タグ本体(.chip)より小さく・控えめにして、
@@ -789,7 +790,10 @@
         <button type="button" class="tag-edit-btn" id="tagEditGroupBtn">✎ グループを編集</button>
       </div>
       <div class="action-bar-nav">
-        <button class="navchip active" id="navHomeBtn" data-view="home" aria-label="記録">📝</button>
+        <!-- ⚠動画が連携されているセッション中だけ表示する(2026-09-26ユーザー
+             指摘:「動画無しでメモすることあるか？」)。既定はhidden、
+             renderYtPanel()がリンク状態に応じて出し入れする -->
+        <button class="navchip hidden" id="navHomeBtn" data-view="home" aria-label="記録">📝</button>
         <button class="navchip" id="navHistoryBtn" data-view="history" aria-label="履歴">📚</button>
         <button class="iconbtn" id="settingsBtn" aria-label="設定">⚙</button>
       </div>
@@ -2007,11 +2011,18 @@
     // 閉じていても軽い処理なので毎回呼んで問題ない)
     var linkSection = document.getElementById('ytLinkSection');
     var settingsBox = document.getElementById('ytSettingsBox');
+    var linked = !!(session && session.ytVideoId);
     if(linkSection && settingsBox){
-      var linked = !!(session && session.ytVideoId);
       linkSection.classList.toggle('hidden', linked);
       settingsBox.classList.toggle('hidden', !linked);
     }
+    // ⚠「記録」タブ(メモ画面)は動画連携中だけ出す(2026-09-26ユーザー指摘:
+    //   「動画無しでメモすることあるか？何メモしろと？」)。連携解除・配信
+    //   終了等でリンクが外れた瞬間にhome画面を見ていた場合は、そこに留まる
+    //   と参照するタブが消えて宙に浮くので履歴画面へ連れて行く。
+    var navHomeBtn = document.getElementById('navHomeBtn');
+    if(navHomeBtn) navHomeBtn.classList.toggle('hidden', !linked);
+    if(!linked && currentView==='home') showView('history');
     var openCustomTabBtn = document.getElementById('ytOpenCustomTabBtn');
     if(openCustomTabBtn) openCustomTabBtn.classList.toggle('hidden', !(session && session.ytCustomTab));
     relocateControlsForMode();
