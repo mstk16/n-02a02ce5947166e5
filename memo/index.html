@@ -404,6 +404,17 @@
   .session-row .t1{font-weight:700; font-size:15px; word-break:break-word;}
   .session-row .t2{font-size:12px; color:var(--sub); margin-top:4px;}
   .session-row .live{color:var(--accent); font-weight:700;}
+  /* 動画未連携時は#videoPaneが無くなり#appが広がる分、履歴カードが横に
+     間延びして見えていた(2026-09-26ユーザー指摘「横に広げただけじゃん」)。
+     幅に余裕がある時はYouTubeのライブラリ風グリッドにし、サムネも
+     大きくして空いた横幅を実際に使う。狭い画面(スマホ縦持ち等)は
+     従来どおり1列・横並びサムネのまま(auto-fillなので条件分岐不要)。 */
+  @media (min-width:640px){
+    .session-list{display:grid; grid-template-columns:repeat(auto-fill, minmax(260px,1fr)); gap:14px;}
+    .session-row{flex-direction:column; align-items:stretch;}
+    .session-thumb{width:100%; height:auto; aspect-ratio:16/9;}
+    .session-thumb-empty{aspect-ratio:16/9; height:auto; font-size:32px;}
+  }
 
   .detail-header{margin-bottom:14px;}
   .detail-actions{display:flex; gap:8px; margin-top:12px; flex-wrap:wrap;}
