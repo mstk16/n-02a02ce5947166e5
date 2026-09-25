@@ -727,10 +727,17 @@
         <button class="btn primary" id="ytLinkBtn">連携</button>
       </div>
       <div class="add-tag-row" style="margin-top:8px;">
-        <input type="text" id="ytSearchInput" placeholder="または検索して開く">
+        <input type="text" id="ytSearchInput" placeholder="または検索して開く（Chromeで開きます）">
         <button class="btn" id="ytSearchBtn">検索</button>
       </div>
-      <div class="yt-search-results" id="ytSearchResults"></div>
+      <!-- ⚠検索はYouTube Data APIの検索(search.list)ではなく、本物のYouTube
+           検索ページをChromeで開く方式(2026-09-26変更)。以前はAPIキーの
+           個人登録が必須で「なんで検索するだけでAPIが要るのか」と指摘された
+           ——このアプリはサーバーを持たない静的サイトなので共有キーを隠す
+           場所が無く、検索APIを使う限りユーザーに個人キーを持たせるしか
+           なかった。見つけた動画のリンクをコピーして戻れば、既存の
+           クリップボード自動検知でそのまま連携できる(メモ機能自体は
+           今まで通りアプリ内で使える・変わるのは「探す」場所だけ)。 -->
       <!-- メン限(メンバー限定)動画は埋め込み再生できないため、最初からChrome
            (Custom Tabs)で開くモードを選べるようにする(2026-09-25)。
            タイムスタンプは経過時間ベースになる(±5秒で補正可能・下記ヒント参照) -->
@@ -2199,68 +2206,30 @@
     renderChatEmbed(activeSession());
   });
 
-  async function searchYouTube(query){
+  // 本物のYouTube検索ページをブラウザ(Chrome Custom Tabs)で開く。以前は
+  // YouTube Data APIのsearch.listで検索結果を自前表示していたが、これは
+  // ユーザーごとの個人APIキー登録が必須で導入の壁が高すぎた
+  // (2026-09-26ユーザー指摘「検索するだけでなんでAPIがいるの」「他のアプリ
+  // はAPI無しで検索できる」への対応。このアプリはサーバー無しの静的サイト
+  // なので共有キーを隠す場所が無く、検索APIを使う限りAPIキー必須は避け
+  // られない→検索そのものをAPI経由でなくブラウザ委任にして回避した)。
+  // 見つけた動画のリンクをコピーして戻れば、既存のクリップボード自動検知
+  // で連携できる(メモ機能自体は今まで通り)。
+  function openYouTubeSearchInBrowser(query){
     if(!query) return;
-    if(!state.ytApiKey){
-      showToast('先に「検索用APIキーを設定」からAPIキーを登録してください');
-      ytApiKeyRow.classList.remove('hidden');
-      return;
+    var url = 'https://www.youtube.com/results?search_query=' + encodeURIComponent(query);
+    if(window.AndroidVideo && window.AndroidVideo.openUrlInCustomTab){
+      window.AndroidVideo.openUrlInCustomTab(url);
+    } else {
+      window.open(url, '_blank');
     }
-    var resultsWrap = document.getElementById('ytSearchResults');
-    resultsWrap.innerHTML = '<div class="empty-state">検索中…</div>';
-    try{
-      var url = 'https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&maxResults=10&q=' +
-        encodeURIComponent(query) + '&key=' + encodeURIComponent(state.ytApiKey);
-      var res = await fetch(url);
-      var data = await res.json();
-      if(!res.ok){
-        resultsWrap.innerHTML = '';
-        showToast('検索に失敗しました（' + ((data.error && data.error.message) || res.status) + '）');
-        return;
-      }
-      renderYtSearchResults(data.items || []);
-    }catch(e){
-      resultsWrap.innerHTML = '';
-      showToast('検索に失敗しました（通信エラー）');
-    }
-  }
-
-  function renderYtSearchResults(items){
-    var wrap = document.getElementById('ytSearchResults');
-    if(!items.length){
-      wrap.innerHTML = '<div class="empty-state">見つかりませんでした</div>';
-      return;
-    }
-    wrap.innerHTML = items.map(function(it){
-      var vid = it.id && it.id.videoId;
-      var sn = it.snippet || {};
-      var thumb = sn.thumbnails && (sn.thumbnails.default || sn.thumbnails.medium || {}).url;
-      return '<div class="yt-search-item" data-vid="'+escapeAttr(vid||'')+'">' +
-        (thumb ? '<img src="'+escapeAttr(thumb)+'" alt="">' : '') +
-        '<div class="yt-search-item-info">' +
-          '<div class="yt-search-item-title">'+escapeHtml(sn.title||'')+'</div>' +
-          '<div class="yt-search-item-channel">'+escapeHtml(sn.channelTitle||'')+'</div>' +
-        '</div></div>';
-    }).join('');
-    wrap.querySelectorAll('.yt-search-item').forEach(function(el){
-      el.addEventListener('click', function(){
-        var vid = el.dataset.vid;
-        if(!vid) return;
-        var result = linkYouTubeAsSession(vid);
-        if(result==='new') showToast('新しい配信メモを始めました');
-        else if(result==='resumed') showToast('前回のメモを再開しました');
-        wrap.innerHTML = '';
-        document.getElementById('ytSearchInput').value = '';
-        showView('home');
-      });
-    });
   }
 
   document.getElementById('ytSearchBtn').addEventListener('click', function(){
-    searchYouTube(document.getElementById('ytSearchInput').value.trim());
+    openYouTubeSearchInBrowser(document.getElementById('ytSearchInput').value.trim());
   });
   document.getElementById('ytSearchInput').addEventListener('keydown', function(e){
-    if(e.key==='Enter'){ e.preventDefault(); searchYouTube(this.value.trim()); }
+    if(e.key==='Enter'){ e.preventDefault(); openYouTubeSearchInBrowser(this.value.trim()); }
   });
   document.getElementById('ytUnlinkBtn').addEventListener('click', function(){
     var s = activeSession();
@@ -2787,7 +2756,6 @@
     pcSyncHostInput.value = state.pcSyncHost || '';
     updatePcSyncStatusDisplay();
     document.getElementById('ytApiKeyRow').classList.add('hidden');
-    document.getElementById('ytSearchResults').innerHTML = '';
     document.getElementById('ytSearchInput').value = '';
     updateYtApiKeyStatusHint();
     sessionSheet.classList.remove('hidden');
