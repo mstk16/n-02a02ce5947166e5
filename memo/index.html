@@ -672,7 +672,13 @@
 </head>
 <body>
 <div id="root">
-<div id="videoPane">
+<!-- ⚠既定でhiddenにする(2026-09-26発覚)。「動画未連携時はhome画面に
+     行けない」設計にしてから、初期化時に履歴画面(history)へ直接着地する
+     経路ができ、そこではrenderYtPanel()が一度も呼ばれないため、このパネル
+     を隠す処理自体が走らず、動画未連携でも黒い帯が画面半分を占領したまま
+     残っていた(ユーザー指摘「画面デッドスペース有効活用してね」)。
+     renderYtPanel()は動画連携が確認できたときだけこのhiddenを外す。 -->
+<div id="videoPane" class="hidden">
   <div class="video-box"><div id="ytPlayerHostBig"></div></div>
   <!-- 内画面(シアターモード)ではJSが#quickMemoCardを#appからここへ移動する
        (ユーザー指示2026-09-06: 動画は右上のまま、チャットとメモの位置を
