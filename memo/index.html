@@ -2312,9 +2312,25 @@
     });
   }
 
-  function pcSyncOneSession(s, cb){
-    var diff = (s.noteText || '').slice(s.pcSyncedLen || 0);
+  function pcSyncOneSession(s, cb, force){
+    var startLen = s.pcSyncedLen || 0;
+    var rawDiff = (s.noteText || '').slice(startLen);
+    // 行の途中でTickが来ると千切れた断片が2回に分けて送られ、PC側で1行が
+    // 2行の断片(片方はタイムスタンプ無し)に割れて時系列マージが壊れる
+    // (2026-09-25発覚: PC拡張のメモ先頭にタイムスタンプ無しの断片が浮く不具合の元)。
+    // 直近の改行までだけを送り、書きかけの最終行は完成する(次の改行が来る)まで待つ。
+    // ただしforce時(配信終了時のフラッシュ)は、もう次の改行が来ない書きかけの
+    // 最終行も含めて全部送り切る(でないと未完成の最後の1行だけ永久に送られない)。
+    var diff;
+    if(force){
+      diff = rawDiff;
+    }else{
+      var lastNl = rawDiff.lastIndexOf('\n');
+      if(lastNl < 0){ cb(); return; } // 改行がまだ無い=最後の行が完成していない
+      diff = rawDiff.slice(0, lastNl + 1);
+    }
     if(!diff.trim()){ cb(); return; } // 差分が空白だけなら送信自体をスキップ
+    var sentLen = diff.length;
     var settled = false;
     var ws = null;
     var timer = setTimeout(function(){ finish(); }, PC_SYNC_TIMEOUT_MS);
@@ -2342,7 +2358,10 @@
       try{ data = JSON.parse(ev.data); }catch(e){}
       if(data && data.type === 'pushMobileNoteResult'){
         if(data.ok){
-          s.pcSyncedLen = s.noteText.length;
+          // s.noteText.length(送信中に増えているかもしれない現在値)ではなく
+          // 実際に送った分だけ進める。そうしないと送信中〜ack受信までの間に
+          // 追加で打った分がpcSyncedLenの先へ押し出され、二度と送られなくなる。
+          s.pcSyncedLen = startLen + sentLen;
           state.pcLastSyncAt = Date.now();
           save();
           updatePcSyncStatusDisplay();
@@ -2680,6 +2699,12 @@
     state.activeSessionId = null;
     destroyYtPlayer();
     save();
+    // 配信終了時、書きかけの最終行(まだ改行が来ていない分)が居れば送り切る。
+    // 失敗しても黙って諦める(次回pcSyncTickは改行完成待ちのままなので、
+    // 万一ここが失敗すると最後の1行だけ手元に残る点は許容する)。
+    if(s.ytVideoId && pcSyncConfigured() && (s.noteText || '').length > (s.pcSyncedLen || 0)){
+      pcSyncOneSession(s, function(){}, true);
+    }
   }
 
   // ---------- 設定シート ----------
