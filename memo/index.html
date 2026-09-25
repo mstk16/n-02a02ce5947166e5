@@ -235,6 +235,11 @@
     border:1.5px solid var(--accent); border-radius:14px;
     background:var(--accent-dim); padding:12px; margin-top:8px;
   }
+  /* URL貼り付け・検索は一行入力欄なので、広い画面でも際限なく伸ばさない
+     (2026-09-26ユーザー指摘「上の検索帯の幅もむだ」)。#ytLinkSectionは
+     履歴画面(historyView)のトップにあり、動画未連携で#appがフル幅に
+     広がる状態でも、この枠だけは読みやすい幅で頭打ちにする */
+  #ytLinkSection{max-width:480px;}
   #ytLinkSection .field-label, .yt-settings .field-label{ color:var(--accent); margin-top:0; }
   .yt-settings.hidden{display:none;}
   /* ⚠#ytLinkSectionには元々.hiddenを隠すCSSルールが無く、連携済み中も
