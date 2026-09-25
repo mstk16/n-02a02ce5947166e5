@@ -2555,17 +2555,20 @@
   }
   var REVEAL_DIRS = ['up', 'upright', 'right', 'downright', 'down', 'downleft', 'left', 'upleft'];
 
-  // タグ(スタンプ)ボタン＝押した瞬間のタイムスタンプ付きで末尾に追記する
-  // (🕐・クイック追加バーと同じ「常に末尾へ」方式。ユーザー指示:
-  // スタンプを押したときも同時にタイムスタンプを記録してほしい)。
+  // タグ(グループの升目メニューで選んだワード)＝今のカーソル位置にそのまま
+  // テキストを挿入するだけ(2026-09-25ユーザー指示: タイムスタンプ付与も
+  // 末尾への自動追記＝即記録も無しにする。以前の「常に末尾へ+タイムスタンプ」
+  // 仕様から、さらにその前の「カーソル位置に挿入するだけ」仕様へ巻き戻し)。
   // "◆◇"だけは中身が空のテンプレートなので、◆と◇の間にカーソルを置いて
-  // そのまま打ち込める状態にする。それ以外は追記した直後にカーソルを置く。
+  // そのまま打ち込める状態にする。それ以外は挿入した直後にカーソルを置く。
   function insertTagTemplate(tagName){
-    var s = ensureActiveSession();
-    var t = currentElapsedSec(s);
-    appendLine(formatElapsed(t) + ' ' + tagName);
+    ensureActiveSession();
     var el = quickMemoTextEl;
-    if(tagName === '◆◇') el.setSelectionRange(el.value.length-1, el.value.length-1);
+    var start = el.selectionStart, end = el.selectionEnd;
+    el.value = el.value.slice(0, start) + tagName + el.value.slice(end);
+    var caret = tagName === '◆◇' ? start + 1 : start + tagName.length;
+    el.setSelectionRange(caret, caret);
+    el.dispatchEvent(new Event('input', {bubbles:true}));
     el.focus();
   }
 
