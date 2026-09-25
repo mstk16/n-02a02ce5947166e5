@@ -228,6 +228,14 @@
   #ytLinkSection.hidden{display:none;}
   .yt-settings .yt-status{margin-bottom:8px;}
   .yt-settings .yt-offset-row{margin-bottom:8px;}
+  #ytOpenCustomTabBtn.hidden{display:none;}
+  /* メン限動画でChrome Custom Tabsに切り替えた時、埋め込みiframeの代わりに
+     動画パネル(.video-box)へ出す案内(2026-09-25) */
+  .yt-customtab-panel{
+    width:100%; height:100%; display:flex; flex-direction:column;
+    align-items:center; justify-content:center; gap:12px; padding:16px; text-align:center;
+  }
+  .yt-customtab-msg{color:var(--sub); font-size:13px; line-height:1.6;}
 
   /* 画面全部をメモ欄にする(1配信=1つの連続テキスト。一覧・個別カードは無い)。
      #homeViewがflex-columnなので、このカードがflex:1で縦幅を全部吸う */
@@ -772,10 +780,16 @@
         <button class="btn" id="ytSearchBtn">検索</button>
       </div>
       <div class="yt-search-results" id="ytSearchResults"></div>
+      <!-- メン限(メンバー限定)動画は埋め込み再生できないため、最初からChrome
+           (Custom Tabs)で開くモードを選べるようにする(2026-09-25)。
+           タイムスタンプは経過時間ベースになる(±5秒で補正可能・下記ヒント参照) -->
+      <button type="button" class="btn ghost" id="ytLinkCustomTabBtn" style="margin-top:8px;">🔒メン限動画はChromeで開く</button>
+      <div class="session-hint" style="margin-top:4px;">Chromeでログイン・視聴しながら、タイムスタンプは経過時間で記録します（動画を一時停止/巻き戻した場合は⚙のYouTube連携欄で±5秒補正してください）。</div>
     </div>
     <div class="yt-settings hidden" id="ytSettingsBox">
       <div class="field-label">YouTube連携</div>
       <div class="yt-status" id="ytStatusText">読み込み中…</div>
+      <button type="button" class="btn ghost hidden" id="ytOpenCustomTabBtn" style="margin-bottom:8px;">Chromeを開き直す</button>
       <div class="yt-offset-row">
         <button class="adjust" id="ytOffsetMinus">-5秒</button>
         <button class="adjust" id="ytOffsetPlus">+5秒</button>
@@ -1509,8 +1523,14 @@
     if(session.ytVideoId && ytPlayer && ytPlayerSessionId===session.id && ytElapsedSec!==null){
       return Math.max(0, ytElapsedSec + (session.ytOffsetSec||0));
     }
+    // ⚠Chrome Custom Tabsで動画を開いている(session.ytCustomTab)場合、
+    // 埋め込みプレーヤーが無いため実際の再生位置は取得できず、経過時間
+    // (壁時計)で代用する。動画を一時停止/巻き戻しすると本当の再生位置との
+    // ズレが蓄積するが、他の未連携セッションと同じく±5秒ボタンで補正できる
+    // よう、ytOffsetSecはこちらの経路でも適用する(2026-09-25ユーザー指示:
+    // 「タイムスタンプがちゃんと機能しないと本末転倒」への対応)。
     var end = session.endedAt || Date.now();
-    return Math.floor((end - session.startedAt)/1000);
+    return Math.max(0, Math.floor((end - session.startedAt)/1000) + (session.ytOffsetSec||0));
   }
 
   // ---------- YouTube連携(任意: 経過時間の自動取得) ----------
@@ -1640,6 +1660,10 @@
   // しないので、この問題ごと構造的に無くなる)。
   function createYtPlayer(session){
     if(!session || !session.ytVideoId) return;
+    // ⚠念のための二重ガード。呼び出し元(renderYtPanel)は既にytCustomTab分岐
+    // 済みだが、loadYouTubeApi()の非同期コールバックが後から解決して
+    // ここへ来るケース(2026-09-25発覚の競合)があるため、ここでも弾く
+    if(session.ytCustomTab) return;
     if(ytPlayer && ytPlayerSessionId===session.id) return; // 既に接続済み
     destroyYtPlayer();
     var host = document.getElementById('ytPlayerHostBig');
@@ -1663,15 +1687,42 @@
             ytPollInterval = setInterval(pollYtTime, 1000);
             pollYtTime();
           },
-          onError: function(){
-            showToast('この動画は連携できませんでした。手動モードに戻ります');
-            unlinkYouTube(session);
+          // ⚠e.data=101/150は「動画の投稿者が埋め込みを許可していない」
+          // (メン限動画の多くがこれに該当)。この場合だけは連携解除せず、
+          // Chrome Custom Tabsモードへ自動で切り替える(2026-09-25)。
+          // それ以外のエラー(削除済み・非公開等)は従来通り連携解除する。
+          onError: function(e){
+            var code = e && e.data;
+            if(code === 101 || code === 150){
+              session.ytCustomTab = true;
+              save();
+              showToast('埋め込み再生できない動画です。Chromeで開けます', 'Chromeで開く', function(){
+                openInCustomTab(session.ytVideoId);
+              }, 8000);
+              renderYtPanel(session);
+            } else {
+              showToast('この動画は連携できませんでした。手動モードに戻ります');
+              unlinkYouTube(session);
+            }
           }
         }
       });
     }catch(err){
       showToast('YouTube連携でエラーが発生しました');
       unlinkYouTube(session);
+    }
+  }
+
+  // メン限(メンバー限定)動画をChrome Custom Tabsで開く。本物のChromeなので
+  // Googleサインイン・メンバーシップ確認込みで視聴できる(WebView埋め込みでは
+  // ブロックされる・2026-09-25実機検証)。橋渡しが無い環境(通常ブラウザでの
+  // 動作確認等)ではnew tabで開くだけにフォールバックする。
+  function openInCustomTab(videoId){
+    if(!videoId) return;
+    if(window.AndroidVideo && window.AndroidVideo.openInCustomTab){
+      window.AndroidVideo.openInCustomTab(videoId);
+    } else {
+      window.open('https://www.youtube.com/watch?v=' + videoId, '_blank');
     }
   }
 
@@ -1686,7 +1737,7 @@
 
   function unlinkYouTube(session){
     destroyYtPlayer();
-    if(session){ session.ytVideoId = null; save(); }
+    if(session){ session.ytVideoId = null; session.ytCustomTab = false; save(); }
     renderYtPanel(session);
   }
 
@@ -1704,20 +1755,48 @@
   // 誤解した)。動画IDが一致する既存セッションがあれば、終了済みでも再開する。
   // 戻り値は呼び出し側のトースト出し分け用: 'same'=連携し直しただけ(何も変化
   // 無し)/ 'resumed'=過去のメモを再開/ 'new'=真っさらな新規メモ。
-  function linkYouTubeAsSession(id){
+  // ⚠customTab=trueのときは、linkYouTube()が内部でrenderYtPanel()を呼ぶ前に
+  // session.ytCustomTabを立てておくこと。後から立てると、renderYtPanelの
+  // 1回目の呼び出し(通常の埋め込み試行)が先にloadYouTubeApi()の非同期処理を
+  // 開始してしまい、それが後から解決してcreateYtPlayer()が呼ばれ、正しく
+  // 出したChrome案内パネルを上書きしてしまう競合が実際に起きた(2026-09-25)。
+  function linkYouTubeAsSession(id, customTab){
     var cur = activeSession();
-    if(cur && cur.ytVideoId === id) return 'same';
+    if(cur && cur.ytVideoId === id){
+      if(customTab && !cur.ytCustomTab){ cur.ytCustomTab = true; save(); renderYtPanel(cur); }
+      return 'same';
+    }
     var existing = state.sessions.find(function(s){ return s.ytVideoId === id; });
     if(cur) endActiveSessionCore(cur);
     if(existing){
       existing.endedAt = null;
       state.activeSessionId = existing.id;
+      if(customTab) existing.ytCustomTab = true;
       linkYouTube(existing, id);
       return 'resumed';
     }
     var s = ensureActiveSession();
+    if(customTab) s.ytCustomTab = true;
     linkYouTube(s, id);
     return 'new';
+  }
+
+  // メン限動画等でChrome Custom Tabsに切り替えたセッション用の、動画パネルの
+  // 中身(埋め込みiframeの代わりにここへ表示する)。#ytPlayerHostBigは
+  // 通常時のembed用ホストと共用(2026-09-07統一方針に合わせる)
+  function renderCustomTabPanel(session){
+    destroyYtPlayer(); // 既存の埋め込みプレーヤーが残っていれば片付ける
+    var host = document.getElementById('ytPlayerHostBig');
+    if(!host) return;
+    host.innerHTML =
+      '<div class="yt-customtab-panel">' +
+        '<div class="yt-customtab-msg">🔒メン限動画はChromeで再生します<br>タイムスタンプは経過時間で記録されます</div>' +
+        '<button type="button" class="btn primary" id="ytCustomTabOpenBtn">Chromeで開く</button>' +
+      '</div>';
+    document.getElementById('ytCustomTabOpenBtn').addEventListener('click', function(){
+      openInCustomTab(session.ytVideoId);
+    });
+    setYtStatus('Chromeで再生中（経過時間で記録・±5秒で補正可）');
   }
 
   function renderYtPanel(session){
@@ -1725,7 +1804,9 @@
     if(!videoPane) return;
     if(session && session.ytVideoId){
       videoPane.classList.remove('hidden');
-      if(!ytPlayer || ytPlayerSessionId!==session.id){
+      if(session.ytCustomTab){
+        renderCustomTabPanel(session);
+      } else if(!ytPlayer || ytPlayerSessionId!==session.id){
         setYtStatus('読み込み中…');
         loadYouTubeApi(function(){ createYtPlayer(session); }, function(){ unlinkYouTube(session); });
       }
@@ -1741,6 +1822,8 @@
       linkSection.classList.toggle('hidden', linked);
       settingsBox.classList.toggle('hidden', !linked);
     }
+    var openCustomTabBtn = document.getElementById('ytOpenCustomTabBtn');
+    if(openCustomTabBtn) openCustomTabBtn.classList.toggle('hidden', !(session && session.ytCustomTab));
     relocateControlsForMode();
     renderChatEmbed(session);
   }
@@ -1888,6 +1971,20 @@
     if(currentView==='home') renderHome();
   });
 
+  // メン限動画を最初からChrome Custom Tabsモードで連携する(埋め込み失敗を
+  // 待たず、ユーザーが最初から分かっている場合の近道・2026-09-25)
+  document.getElementById('ytLinkCustomTabBtn').addEventListener('click', function(){
+    var raw = document.getElementById('ytUrlInput').value;
+    var id = extractYouTubeId(raw);
+    if(!id){ showToast('YouTubeのURLを確認してください'); return; }
+    var result = linkYouTubeAsSession(id, true);
+    if(result==='new') showToast('新しい配信メモを始めました');
+    else if(result==='resumed') showToast('前回のメモを再開しました');
+    document.getElementById('ytUrlInput').value = '';
+    if(currentView==='home') renderHome();
+    openInCustomTab(id);
+  });
+
   // ---------- YouTube検索(Data API v3・任意) ----------
   // 検索(search.list)は1回100ユニット消費。既定の無料枠は1日10,000ユニット＝約100回/日。
   // 超過時はエラーになるだけで自動課金はされない。
@@ -1985,6 +2082,10 @@
   document.getElementById('ytUnlinkBtn').addEventListener('click', function(){
     var s = activeSession();
     unlinkYouTube(s);
+  });
+  document.getElementById('ytOpenCustomTabBtn').addEventListener('click', function(){
+    var s = activeSession();
+    if(s && s.ytVideoId) openInCustomTab(s.ytVideoId);
   });
   document.getElementById('ytOffsetMinus').addEventListener('click', function(){
     var s = activeSession();
