@@ -1031,12 +1031,26 @@
         padCy = r.top - C.PAD_LIFT - padH / 2;
         if (padCy - padH / 2 < M) padCy = bottom + C.PAD_LIFT + padH / 2;
       }
+      var padR = (Math.max(cellW, cellH) + GAP) * C.FINGER_R_K;
       var pad = {
         cx: padCx, cy: padCy, w: padW, h: padH,
-        r: (Math.max(cellW, cellH) + GAP) * C.FINGER_R_K,
+        r: padR,
         dot: Math.round(Math.min(cellW, cellH) * C.FINGER_SIZE_K),
         mode: place === 'row' ? 'row' : 'pad',
-        cells: {}, rowXs: null
+        cells: {}, rowXs: null,
+        // ⚠端に近い対象(タグ帯のように文字が長いほどpadRも大きくなる)では、
+        //   判定に必要な実移動量(padR)を画面端までの実際の残り距離が下回る
+        //   コトがある(2026-09-26発覚: 「タグの左側の升目が押せない」)。
+        //   2026-09-25の「赤丸をcx基準にする」修正はコレを赤丸の見た目だけ
+        //   動かして誤魔化そうとして、ラベル/判定との整合を壊していた
+        //   (「ポインタとタグボタンの重なりが一致しない」不具合の原因)。
+        //   正しくは赤丸・ラベル・判定を全部padCx基準のまま揃え、実移動量の
+        //   方を動的に緩める(kissa_launcher/home.htmlのedgeGainと同じ考え方)。
+        autoGain: (function () {
+          var roomL = cx - M, roomR = vw - cx - M, roomU = cy - M, roomD = vh - cy - M;
+          var minRoom = Math.min(roomL, roomR, roomU, roomD);
+          return minRoom < padR ? Math.min(padR / Math.max(minRoom, M), 4) : 1;
+        })()
       };
       if (place === 'row') {
         rowDirs.forEach(function (d, i) {
@@ -1178,16 +1192,17 @@
     var L = layoutReveal({ rect: rect, place: place, sizes: sizes, vw: win.innerWidth, vh: win.innerHeight });
     setScrim(true);
 
-    var R = { els: made, L: L, gain: cfg.gain || 1, ox: 0, oy: 0, pickDir: null, fingerEl: null };
+    // ⚠2026-09-25に赤丸だけをcx(本当のタッチ位置)基準へ切り離す修正をしたが、
+    //   ラベル(padCx基準)・pick判定(生の指移動基準)とは無関係のまま切り離した
+    //   ため、「ポインタとタグボタンの重なりが一致しない」不具合を生んだ
+    //   (2026-09-26発覚)。赤丸・ラベル・判定は必ず同じ基準点(padCx)で揃える
+    //   のが正しい実装で、画面端での実移動量不足はautoGain(layoutReveal内)
+    //   で別途補正する。
+    var R = { els: made, L: L, gain: (cfg.gain || 1) * (L.pad ? L.pad.autoGain : 1), ox: 0, oy: 0, pickDir: null, fingerEl: null };
     if (L.pad && cfg.fingerDot !== false) {
       var fg = doc.createElement('div');
       fg.className = 'pg-finger';
-      // ⚠横位置は本当のタッチ位置(cx)を使う。L.pad.cxは画面端で升目を収めるための
-      //   クランプ済み中心なので、対象が画面端に近いとpad.cxが本当の指の位置から
-      //   大きくズレ、赤丸(指の代理)が最初から指と無関係な場所に出てしまう
-      //   (2026-09-25発覚: 画面端のタグボタンで左方向の升目が事実上押せない不具合)。
-      //   縦位置(cy→L.pad.cy)は「指1本ぶん上に出す」意図的な演出なのでそのまま使う。
-      fg.style.left = px(cx);
+      fg.style.left = px(L.pad.cx);
       fg.style.top = px(L.pad.cy);
       fg.style.width = fg.style.height = L.pad.dot + 'px';
       doc.body.appendChild(fg);
