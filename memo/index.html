@@ -2922,18 +2922,54 @@
   });
 
   // ---------- 選択中セットの中身(タグ)の管理 ----------
+  // ⚠追加・削除はあるが既存タグの文字を直せる手段が無かった(2026-09-27
+  //   ユーザー指摘「タグの追加と削除はできても編集ができない」)。グループ名
+  //   のインライン編集(renamingTagSetId)と同じパターンを個別タグにも適用する。
+  var renamingTagIdx = null;
   function renderTagManageList(){
     var wrap = document.getElementById('tagManageList');
     if(!wrap) return;
     var set = activeTagSet();
     var nameEl = document.getElementById('activeTagSetName');
     if(nameEl) nameEl.textContent = set.name;
+    if(renamingTagIdx !== null && renamingTagIdx >= set.tags.length) renamingTagIdx = null;
     wrap.innerHTML = set.tags.map(function(t, i){
+      if(i === renamingTagIdx){
+        return '<div class="tag-manage-row">' +
+          '<input type="text" id="renameTagInline" value="'+escapeAttr(t)+'" style="flex:1 1 auto; min-width:80px; padding:6px 10px; border-radius:8px; font-size:13px;">' +
+          '<button type="button" class="btn" id="renameTagConfirm">確定</button>' +
+          '<button type="button" class="btn ghost" id="renameTagCancel">×</button>' +
+          '</div>';
+      }
       return '<div class="tag-manage-row">' +
-        '<span class="tag-manage-text">'+escapeHtml(t)+'</span>' +
+        '<span class="tag-manage-text" data-editidx="'+i+'" role="button">'+escapeHtml(t)+'</span>' +
         '<button type="button" class="tag-manage-del" data-idx="'+i+'" aria-label="削除">×</button>' +
         '</div>';
     }).join('');
+    if(renamingTagIdx !== null){
+      var rInput = document.getElementById('renameTagInline');
+      function commitTagRename(){
+        var t = rInput.value.trim();
+        if(t) set.tags[renamingTagIdx] = t;
+        renamingTagIdx = null;
+        save();
+        renderTagManageList();
+        if(currentView==='home') renderQuickTags(quickTagsWrap, insertTagTemplate);
+      }
+      function cancelTagRename(){ renamingTagIdx = null; renderTagManageList(); }
+      document.getElementById('renameTagConfirm').addEventListener('click', commitTagRename);
+      document.getElementById('renameTagCancel').addEventListener('click', cancelTagRename);
+      rInput.addEventListener('keydown', function(e){
+        if(e.key==='Enter'){ e.preventDefault(); commitTagRename(); }
+        if(e.key==='Escape'){ cancelTagRename(); }
+      });
+      rInput.focus();
+      rInput.select();
+      return;
+    }
+    wrap.querySelectorAll('.tag-manage-text[data-editidx]').forEach(function(el){
+      el.addEventListener('click', function(){ renamingTagIdx = parseInt(el.dataset.editidx, 10); renderTagManageList(); });
+    });
     wrap.querySelectorAll('.tag-manage-del').forEach(function(btn){
       btn.addEventListener('click', function(){
         var idx = parseInt(btn.dataset.idx, 10);
