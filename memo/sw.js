@@ -1,5 +1,5 @@
 // 配信メモ — オフライン用 Service Worker
-const CACHE = 'haisin-memo-v2';
+const CACHE = 'haisin-memo-v3';
 const CORE = ['./', './index.html', './manifest.webmanifest',
               './icon-192.png', './icon-512.png', './icon-maskable-512.png'];
 
