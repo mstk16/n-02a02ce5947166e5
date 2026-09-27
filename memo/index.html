@@ -142,10 +142,16 @@
   }
 
   #app{
-    max-width:560px; margin:0 auto;
+    max-width:560px; width:100%; margin:0 auto;
     flex:1 1 auto; min-height:0;
     display:flex; flex-direction:column; position:relative;
   }
+  /* ⚠#rootをflex-columnにした副作用(2026-09-27発覚: 「動画直下のメモ欄の
+     幅が細くなってる」)。flexアイテムの`margin:0 auto`は、block要素の時と
+     違い「中身の幅に縮めてから余りを両側の余白に回す」動作になり、
+     widthを明示しないと画面幅より大幅に狭く縮んでしまう(実測: 画面幅
+     372pxに対し#appが226pxまで縮んでいた)。width:100%を明示し、
+     max-widthで頭打ちにしつつ画面幅いっぱいに広がるようにする。 */
   /* チャット埋め込み(iframe内部=youtube.com側)のスーパーチャット一覧等から
      戻れなくなったときの避難ボタン。#ytChatWrapの右上に重ねて表示する
      (2026-09-07報告: 「チャットの右が途切れてて、スパチャを押したら戻れない」
