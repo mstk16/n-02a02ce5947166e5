@@ -72,7 +72,12 @@
        displayをflexにし、各要素自身にflex-basisを持たせることで、
        サイズを中身(メモ=狭い/チャット=広い)に固定し、orderは純粋に
        左右の位置だけを動かすようにする */
-    #root{display:flex; height:100dvh;}
+    /* ⚠狭い画面用の基本ルール(#root{flex-direction:column})がここに漏れて
+       きて、広い画面でも動画とメモが横並びにならず縦積みのままになり、
+       下の操作帯(設定・記録ボタン等)が変な位置に押し出される致命的な
+       不具合になっていた(2026-09-27発覚:「下の帯に設定ボタンとかメモ
+       入力ボタンが表示されてない」)。flex-directionを明示してrowに戻す。 */
+    #root{display:flex; flex-direction:row; height:100dvh;}
     #videoPane{
       display:flex; flex-direction:column; height:100dvh; min-width:0;
       flex:1.15 1.15 0%;
