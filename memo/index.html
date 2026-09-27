@@ -44,7 +44,15 @@
     font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Yu Gothic UI",sans-serif;
     overscroll-behavior-y:none;
   }
-  #root{height:100dvh;}
+  /* ⚠#appの高さを固定100dvhにしていた(旧実装)ため、動画パネル(#videoPane)が
+     見えている状態(動画連携中)だと、動画ぶんの高さが画面の外に押し出され、
+     メモ欄の下端・下帯が画面の下にはみ出して届かない/重なる不具合になって
+     いた(2026-09-27ユーザー報告「メモ欄が下にスライドできない」「帯がメモ欄
+     に重なってる」。実測: videoPane=209px, appも100dvh=783pxで合計992px、
+     画面(783px)から209pxはみ出していた)。#rootをflex-columnにして、
+     videoPane(動画。中身の高さぶんだけ)→app(残り全部)の順で高さを分配する
+     (広い画面用の@media(min-width:700px)側は元々flexで正しく組んであった)。 */
+  #root{height:100dvh; display:flex; flex-direction:column;}
 
   /* 横長/正方形に近い広い画面(分割画面の片側など)ではシアターモードにする:
      動画+チャットを左、アプリ本体を右の2ペインにする。
@@ -134,7 +142,8 @@
   }
 
   #app{
-    max-width:560px; margin:0 auto; height:100dvh;
+    max-width:560px; margin:0 auto;
+    flex:1 1 auto; min-height:0;
     display:flex; flex-direction:column; position:relative;
   }
   /* チャット埋め込み(iframe内部=youtube.com側)のスーパーチャット一覧等から
