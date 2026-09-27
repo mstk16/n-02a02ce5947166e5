@@ -44,15 +44,7 @@
     font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Yu Gothic UI",sans-serif;
     overscroll-behavior-y:none;
   }
-  /* ⚠#appの高さを固定100dvhにしていた(旧実装)ため、動画パネル(#videoPane)が
-     見えている状態(動画連携中)だと、動画ぶんの高さが画面の外に押し出され、
-     メモ欄の下端・下帯が画面の下にはみ出して届かない/重なる不具合になって
-     いた(2026-09-27ユーザー報告「メモ欄が下にスライドできない」「帯がメモ欄
-     に重なってる」。実測: videoPane=209px, appも100dvh=783pxで合計992px、
-     画面(783px)から209pxはみ出していた)。#rootをflex-columnにして、
-     videoPane(動画。中身の高さぶんだけ)→app(残り全部)の順で高さを分配する
-     (広い画面用の@media(min-width:700px)側は元々flexで正しく組んであった)。 */
-  #root{height:100dvh; display:flex; flex-direction:column;}
+  #root{height:100dvh;}
 
   /* 横長/正方形に近い広い画面(分割画面の片側など)ではシアターモードにする:
      動画+チャットを左、アプリ本体を右の2ペインにする。
@@ -72,12 +64,7 @@
        displayをflexにし、各要素自身にflex-basisを持たせることで、
        サイズを中身(メモ=狭い/チャット=広い)に固定し、orderは純粋に
        左右の位置だけを動かすようにする */
-    /* ⚠狭い画面用の基本ルール(#root{flex-direction:column})がここに漏れて
-       きて、広い画面でも動画とメモが横並びにならず縦積みのままになり、
-       下の操作帯(設定・記録ボタン等)が変な位置に押し出される致命的な
-       不具合になっていた(2026-09-27発覚:「下の帯に設定ボタンとかメモ
-       入力ボタンが表示されてない」)。flex-directionを明示してrowに戻す。 */
-    #root{display:flex; flex-direction:row; height:100dvh;}
+    #root{display:flex; height:100dvh;}
     #videoPane{
       display:flex; flex-direction:column; height:100dvh; min-width:0;
       flex:1.15 1.15 0%;
@@ -147,16 +134,9 @@
   }
 
   #app{
-    max-width:560px; width:100%; margin:0 auto;
-    flex:1 1 auto; min-height:0;
+    max-width:560px; margin:0 auto; height:100dvh;
     display:flex; flex-direction:column; position:relative;
   }
-  /* ⚠#rootをflex-columnにした副作用(2026-09-27発覚: 「動画直下のメモ欄の
-     幅が細くなってる」)。flexアイテムの`margin:0 auto`は、block要素の時と
-     違い「中身の幅に縮めてから余りを両側の余白に回す」動作になり、
-     widthを明示しないと画面幅より大幅に狭く縮んでしまう(実測: 画面幅
-     372pxに対し#appが226pxまで縮んでいた)。width:100%を明示し、
-     max-widthで頭打ちにしつつ画面幅いっぱいに広がるようにする。 */
   /* チャット埋め込み(iframe内部=youtube.com側)のスーパーチャット一覧等から
      戻れなくなったときの避難ボタン。#ytChatWrapの右上に重ねて表示する
      (2026-09-07報告: 「チャットの右が途切れてて、スパチャを押したら戻れない」
