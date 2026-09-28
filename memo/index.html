@@ -989,17 +989,42 @@
   function angleDeg(dx, dy) { return (Math.atan2(dy, dx) * 180 / Math.PI + 360) % 360; }
   function axisDir(dx, dy) { return AXIS_ORDER[Math.round(angleDeg(dx, dy) / 45) % 8]; }
 
+  /**
+   * gain を向き別 {l,r,u,d} に揃える。数値ならその値を4方向に配る。
+   * ⚠画面端の救済は「端の側だけ」効かせる必要がある（2026-09-28）。スカラー1個だと
+   *   左端のタグで左へ届かせるためのブーストが右・上・下にも一律にかかり、
+   *   余裕のある側まで過敏になって「左右の動きが指と合わない」原因になっていた。
+   */
+  function sideGain(g) {
+    if (g && typeof g === 'object') return { l: g.l || 1, r: g.r || 1, u: g.u || 1, d: g.d || 1 };
+    g = g || 1;
+    return { l: g, r: g, u: g, d: g };
+  }
+
+  /** 向き別 gain に一律の倍率 k を掛ける（cfg.gain × autoGain） */
+  function mulGain(g, k) {
+    var s = sideGain(g);
+    return { l: s.l * k, r: s.r * k, u: s.u * k, d: s.d * k };
+  }
+
+  /**
+   * パッド型の「原点が指についてくる」計算。
+   * 原点(o.ox,o.oy)からの実効変位（gain倍後）が R を超えたら、超えた分だけ原点を指の方へ引きずる。
+   * ＝戻し始めた瞬間から丸が動く（ゲームパッドのスティックの基部が指に追従する作り）。
+   * gain は数値 or 向き別 {l,r,u,d}（変位の符号で左右・上下どちらの倍率を使うか決まる）。
+   * @returns {ox, oy, ex, ey, dist}  ex/ey = 判定と丸の表示に使う実効変位（gain倍済み）
+   */
   function dragOrigin(o, dx, dy, R, gain) {
-    gain = gain || 1;
+    var g = sideGain(gain);
     var ox = (o && o.ox) || 0, oy = (o && o.oy) || 0;
     var vx = dx - ox, vy = dy - oy;
-    var Rf = R / gain, vl = Math.hypot(vx, vy);
-    if (vl > Rf) {
-      var s = 1 - Rf / vl;
-      ox += vx * s; oy += vy * s;
-      vx = dx - ox; vy = dy - oy;
+    var gx = vx < 0 ? g.l : g.r, gy = vy < 0 ? g.u : g.d;
+    var ex = vx * gx, ey = vy * gy, el = Math.hypot(ex, ey);
+    if (el > R) {
+      // 実効空間で半径Rに縮め、向き別の倍率で実移動量へ戻して原点を決める
+      ex *= R / el; ey *= R / el;
+      ox = dx - ex / gx; oy = dy - ey / gy;
     }
-    var ex = vx * gain, ey = vy * gain;
     return { ox: ox, oy: oy, ex: ex, ey: ey, dist: Math.hypot(ex, ey) };
   }
 
@@ -1072,10 +1097,11 @@
         //   (「ポインタとタグボタンの重なりが一致しない」不具合の原因)。
         //   正しくは赤丸・ラベル・判定を全部padCx基準のまま揃え、実移動量の
         //   方を動的に緩める(kissa_launcher/home.htmlのedgeGainと同じ考え方)。
+        //   ⚠向き別に持つ（2026-09-28）。四方の最小値1個で全方向を底上げすると、
+        //   端でない側まで過敏になる（sideGain のコメント参照）。
         autoGain: (function () {
-          var roomL = cx - M, roomR = vw - cx - M, roomU = cy - M, roomD = vh - cy - M;
-          var minRoom = Math.min(roomL, roomR, roomU, roomD);
-          return minRoom < padR ? Math.min(padR / Math.max(minRoom, M), 4) : 1;
+          function g(room) { return room < padR ? Math.min(padR / Math.max(room, M), 4) : 1; }
+          return { l: g(cx - M), r: g(vw - cx - M), u: g(cy - M), d: g(vh - cy - M) };
         })()
       };
       if (place === 'row') {
@@ -1224,7 +1250,7 @@
     //   (2026-09-26発覚)。赤丸・ラベル・判定は必ず同じ基準点(padCx)で揃える
     //   のが正しい実装で、画面端での実移動量不足はautoGain(layoutReveal内)
     //   で別途補正する。
-    var R = { els: made, L: L, gain: (cfg.gain || 1) * (L.pad ? L.pad.autoGain : 1), ox: 0, oy: 0, pickDir: null, fingerEl: null };
+    var R = { els: made, L: L, gain: mulGain(L.pad ? L.pad.autoGain : 1, cfg.gain || 1), ox: 0, oy: 0, pickDir: null, fingerEl: null };
     if (L.pad && cfg.fingerDot !== false) {
       var fg = doc.createElement('div');
       fg.className = 'pg-finger';
@@ -1569,7 +1595,7 @@
   // ⚠デプロイのたびに手で更新する。ビルド識別子が無いと「修正をpushしても
   //   端末は古いキャッシュのまま見ている」のかどうかを目視確認できない
   //   (2026-09-27発覚)。⚙設定シートの「アプリの更新」欄に常時表示する。
-  var BUILD_ID = '2026-09-27-01';
+  var BUILD_ID = '2026-09-28-01';
   var STORAGE_KEY = 'haisin-memo-v1';
   var DEFAULT_TAGS = ['◆◇','◆キャラ◇','◆語尾◇','◆かわいい◇','◆◇◆◇◆◇'];
 
