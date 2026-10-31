@@ -1,5 +1,5 @@
 // ろきじめ エゴサ ビューア — オフライン用 Service Worker
-const CACHE = 'roki-egosearch-vd1a2c0aa6133';
+const CACHE = 'roki-egosearch-vd4dbca8b0e59';
 const CORE = ['./', './index.html', './manifest.webmanifest',
               './icon-192.png', './icon-512.png', './icon-maskable-512.png'];
 
